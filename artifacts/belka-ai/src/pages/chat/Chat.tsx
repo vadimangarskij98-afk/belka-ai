@@ -882,6 +882,19 @@ export default function ChatPage() {
             </span>
           </div>
           <div className="flex items-center gap-1.5 flex-shrink-0">
+            <button onClick={() => setMcpOpen(true)} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" title="MCP Servers">
+              <Plug size={14} />
+            </button>
+            <button onClick={() => setTerminalOpen(prev => !prev)} className={`p-1.5 rounded-lg transition-colors ${terminalOpen ? "bg-emerald-500/20 text-emerald-400" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`} title="Terminal">
+              <TerminalSquare size={14} />
+            </button>
+            <button onClick={() => setPreviewStatusOpen(prev => !prev)} className={`p-1.5 rounded-lg transition-colors ${previewStatusOpen ? "bg-blue-500/20 text-blue-400" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`} title="Preview Server">
+              <Server size={14} />
+            </button>
+            <button onClick={() => setWorkspacePickerOpen(true)} className={`p-1.5 rounded-lg transition-colors ${workspacePath ? "bg-violet-500/20 text-violet-400" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`} title="Рабочая папка">
+              <FolderOpen size={14} />
+            </button>
+            <div className="h-4 w-px bg-border/50 mx-0.5" />
             <button onClick={() => setGithubOpen(true)} title="GitHub"
               className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg transition-colors border ${githubRepo ? 'text-green-400 border-green-400/30 bg-green-400/10' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50 border-transparent hover:border-border/50'}`}>
               <Github size={14} />
@@ -1036,19 +1049,6 @@ export default function ChatPage() {
                   <button onClick={() => fileInputRef.current?.click()} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors" title="Attach file">
                     <Paperclip size={16} />
                   </button>
-                  <button onClick={() => setMcpOpen(true)} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors" title="MCP Servers">
-                    <Plug size={16} />
-                  </button>
-                  <button onClick={() => setTerminalOpen(prev => !prev)} className={`p-1.5 rounded-lg transition-colors ${terminalOpen ? "bg-emerald-500/20 text-emerald-400" : "text-muted-foreground hover:text-foreground hover:bg-muted"}`} title="Terminal">
-                    <TerminalSquare size={16} />
-                  </button>
-                  <button onClick={() => setPreviewStatusOpen(prev => !prev)} className={`p-1.5 rounded-lg transition-colors ${previewStatusOpen ? "bg-blue-500/20 text-blue-400" : "text-muted-foreground hover:text-foreground hover:bg-muted"}`} title="Preview Server">
-                    <Server size={16} />
-                  </button>
-                  <button onClick={() => setWorkspacePickerOpen(true)} className={`p-1.5 rounded-lg transition-colors ${workspacePath ? "bg-violet-500/20 text-violet-400" : "text-muted-foreground hover:text-foreground hover:bg-muted"}`} title="Рабочая папка">
-                    <FolderOpen size={16} />
-                  </button>
-                  <div className="h-4 w-px bg-border mx-1" />
                   <ModeSwitcher mode={mode} setMode={setMode} />
                 </div>
 
