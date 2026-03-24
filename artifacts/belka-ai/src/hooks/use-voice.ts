@@ -12,10 +12,12 @@ interface SpeechRecognitionEvent {
   };
 }
 
-const BASE = import.meta.env.BASE_URL || '/';
+const BASE = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
 let currentAudio: HTMLAudioElement | null = null;
 let isSpeaking = false;
 let lastInterruptIdx = -1;
+
+const ttsCache = new Map<string, string>();
 
 const INTERRUPT_RESPONSES = [
   'Да, слушаю тебя!',
@@ -40,29 +42,43 @@ const FALLBACK_RESPONSES = [
   'Приняла к сведению!',
 ];
 
-function getStaticUrl(filename: string): string {
-  return `${BASE}audio/${filename}.mp3`;
-}
+async function elevenLabsSpeak(text: string): Promise<boolean> {
+  try {
+    const cached = ttsCache.get(text);
+    if (cached) {
+      return playDataUrl(cached);
+    }
 
-function fallbackSpeak(text: string): void {
-  if ('speechSynthesis' in window) {
-    window.speechSynthesis.cancel();
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = 'ru-RU';
-    isSpeaking = true;
-    utter.onend = () => { isSpeaking = false; };
-    utter.onerror = () => { isSpeaking = false; };
-    window.speechSynthesis.speak(utter);
+    const res = await fetch(`${BASE}/api/voice/synthesize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, speed: 1.05 }),
+    });
+
+    if (!res.ok) return false;
+
+    const data = await res.json();
+    if (!data.audioUrl) return false;
+
+    ttsCache.set(text, data.audioUrl);
+    if (ttsCache.size > 100) {
+      const first = ttsCache.keys().next().value;
+      if (first) ttsCache.delete(first);
+    }
+
+    return playDataUrl(data.audioUrl);
+  } catch {
+    return false;
   }
 }
 
-function playFile(filename: string): Promise<boolean> {
+function playDataUrl(url: string): Promise<boolean> {
   return new Promise((resolve) => {
     if (currentAudio) {
       currentAudio.pause();
       currentAudio.currentTime = 0;
     }
-    const audio = new Audio(getStaticUrl(filename));
+    const audio = new Audio(url);
     currentAudio = audio;
     isSpeaking = true;
     audio.oncanplaythrough = () => audio.play().catch(() => {
@@ -76,25 +92,34 @@ function playFile(filename: string): Promise<boolean> {
   });
 }
 
-export async function playVoice(clip: string): Promise<void> {
+function browserSpeak(text: string): void {
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = 'ru-RU';
+    isSpeaking = true;
+    utter.onend = () => { isSpeaking = false; };
+    utter.onerror = () => { isSpeaking = false; };
+    window.speechSynthesis.speak(utter);
+  }
+}
+
+async function speak(text: string): Promise<void> {
+  const ok = await elevenLabsSpeak(text);
+  if (!ok) browserSpeak(text);
+}
+
+function getResponseText(clip: string): string {
   const value = VOICE_RESPONSES[clip];
-
   if (Array.isArray(value)) {
-    const idx = Math.floor(Math.random() * value.length);
-    const okIndexed = await playFile(`voice_${clip}_${idx}`);
-    if (okIndexed) return;
-    const okSingle = await playFile(`voice_${clip}`);
-    if (okSingle) return;
-    fallbackSpeak(value[idx]);
-    return;
+    return value[Math.floor(Math.random() * value.length)];
   }
+  return typeof value === 'string' ? value : '';
+}
 
-  const ok = await playFile(`voice_${clip}`);
-  if (ok) return;
-
-  if (typeof value === 'string') {
-    fallbackSpeak(value);
-  }
+export async function playVoice(clip: string): Promise<void> {
+  const text = getResponseText(clip);
+  if (text) await speak(text);
 }
 
 export function isCurrentlySpeaking(): boolean {
@@ -123,14 +148,12 @@ async function playInterrupt(): Promise<void> {
     idx = (idx + 1) % INTERRUPT_RESPONSES.length;
   }
   lastInterruptIdx = idx;
-  const ok = await playFile(`voice_interrupt_${idx}`);
-  if (!ok) fallbackSpeak(INTERRUPT_RESPONSES[idx]);
+  await speak(INTERRUPT_RESPONSES[idx]);
 }
 
 export async function speakText(text: string): Promise<void> {
   const idx = Math.floor(Math.random() * FALLBACK_RESPONSES.length);
-  const ok = await playFile(`voice_fallback_${idx}`);
-  if (!ok) fallbackSpeak(FALLBACK_RESPONSES[idx]);
+  await speak(FALLBACK_RESPONSES[idx]);
 }
 
 export async function pregenerateVoices(): Promise<void> {}

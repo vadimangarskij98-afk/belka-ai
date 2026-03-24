@@ -1,11 +1,12 @@
 import { Link } from "wouter";
 import { motion, useInView } from "framer-motion";
 import { useRef, lazy, Suspense, useState } from "react";
-import { ArrowRight, Code2, Network, Mic, Brain, Zap, Shield, Terminal, Check, Star, Crown } from "lucide-react";
+import { ArrowRight, Code2, Network, Mic, Brain, Zap, Shield, Terminal, Check, Star, Crown, Play } from "lucide-react";
 import { ShinyText } from "@/components/ui-custom/ShinyText";
 import { AgentAvatar } from "@/components/ui-custom/AgentAvatar";
 import { BelkaLogo } from "@/components/layout/ChatSidebar";
 import { CodeBackground } from "@/components/ui-custom/CodeBackground";
+import { SplashScreen } from "@/components/ui-custom/SplashScreen";
 import { PricingModal } from "@/components/modals/PricingModal";
 import { t } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
@@ -18,8 +19,10 @@ const fadeUp = {
 
 export default function Home() {
   const { user } = useAuth();
+  const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 
   return (
+    <SplashScreen>
     <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
       <CodeBackground />
 
@@ -27,6 +30,8 @@ export default function Home() {
         <div className="absolute top-[-200px] left-1/4 w-[800px] h-[800px] bg-primary/8 rounded-full blur-[180px] animate-pulse" style={{ animationDuration: "8s" }} />
         <div className="absolute bottom-[-200px] right-1/4 w-[700px] h-[700px] bg-secondary/8 rounded-full blur-[180px] animate-pulse" style={{ animationDuration: "12s" }} />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-primary/3 rounded-full blur-[200px]" />
+        <div className="absolute top-[30%] right-[10%] w-[300px] h-[300px] bg-blue-500/5 rounded-full blur-[120px] animate-pulse" style={{ animationDuration: "6s" }} />
+        <div className="absolute bottom-[20%] left-[5%] w-[400px] h-[400px] bg-purple-500/5 rounded-full blur-[150px] animate-pulse" style={{ animationDuration: "10s" }} />
       </div>
 
       <nav className="relative z-10 flex items-center justify-between px-4 sm:px-8 py-4 max-w-6xl mx-auto">
@@ -79,6 +84,36 @@ export default function Home() {
       </section>
 
       <StatsSection />
+
+      <section className="relative z-10 py-16 max-w-4xl mx-auto px-4">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="text-center mb-8"
+        >
+          <h2 className="text-2xl sm:text-3xl font-display font-bold mb-3">{t("seeInAction") || "See BELKA AI in Action"}</h2>
+          <p className="text-sm text-muted-foreground">{t("videoSubtitle") || "Watch how our AI squirrel helps you build amazing things"}</p>
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          whileInView={{ opacity: 1, scale: 1 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.5 }}
+          className="relative rounded-2xl overflow-hidden border border-border shadow-2xl shadow-primary/10 aspect-video bg-black/50 backdrop-blur-sm"
+        >
+          <video
+            src={`${BASE}/promo-video.mp4`}
+            controls
+            playsInline
+            preload="metadata"
+            poster={`${BASE}/belka-mascot-original.png`}
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute inset-0 rounded-2xl ring-1 ring-white/10 pointer-events-none" />
+        </motion.div>
+      </section>
+
       <FeaturesSection />
       <PricingSection />
       <HowItWorksSection />
@@ -104,6 +139,7 @@ export default function Home() {
         BELKA AI &copy; {new Date().getFullYear()}
       </footer>
     </div>
+    </SplashScreen>
   );
 }
 

@@ -86,10 +86,19 @@ Full multi-agent AI system:
 
 ## Voice Assistant
 
-- **use-voice.ts** — Main hook: Web Speech API recognition + synthesis, audio playback, interrupt handling
+- **use-voice.ts** — Main hook: Web Speech API recognition + ElevenLabs TTS via backend API, audio playback with caching, interrupt handling
 - **voice-phrases.ts** — 900+ trigger phrases mapping to UI actions (openTerminal, openPreview, openModal, etc.)
 - **voice-responses.ts** — Response text dictionary for voice feedback
+- **Backend**: `/api/voice/synthesize` — ElevenLabs API proxy (eleven_multilingual_v2 model, Russian female voice)
 - Commands: open terminal, preview, docs, profile, settings, pricing, GitHub, mode switching, dictation
+- TTS: ElevenLabs primary, browser speechSynthesis fallback; response caching for performance
+
+## Visual Assets
+
+- **3D Cyberpunk Squirrel Logo** — `belka-logo.png` (face icon), `belka-mascot-original.png` (full body mascot)
+- **Promo Video** — `promo-video.mp4` on landing page with mascot poster
+- **Splash Screen** — 8-second loading animation: squirrel mascot with "BELKA CODER" letter blocks dropping in sequence
+- **CodeBackground** — Canvas-based animated particle system with neon glow effects, code snippets, connecting lines
 
 ## API Routes
 
@@ -122,6 +131,7 @@ All routes prefixed with `/api`:
 - `JWT_SECRET` — JWT signing secret (defaults to "belka-ai-secret-key-2024")
 - `GITHUB_CLIENT_ID` — GitHub OAuth app client ID
 - `GITHUB_CLIENT_SECRET` — GitHub OAuth app client secret
+- `ELEVENLABS_API_KEY` — ElevenLabs TTS API key for voice synthesis
 
 ## Code Runner
 

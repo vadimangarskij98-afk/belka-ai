@@ -50,9 +50,9 @@ export default function AuthPage() {
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ type: "spring", stiffness: 200, damping: 15 }}
-            className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-primary to-secondary flex items-center justify-center text-white font-bold text-3xl mx-auto mb-4 shadow-lg shadow-primary/20"
+            className="w-16 h-16 rounded-2xl mx-auto mb-4 shadow-lg shadow-primary/20 overflow-hidden"
           >
-            B
+            <img src={`${import.meta.env.BASE_URL || "/"}belka-logo.png`.replace(/\/\//g, "/")} alt="BELKA AI" className="w-full h-full object-cover" />
           </motion.div>
           <ShinyText as="h1" className="text-3xl font-display font-bold">BELKA AI</ShinyText>
         </div>

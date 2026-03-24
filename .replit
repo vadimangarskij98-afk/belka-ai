@@ -48,3 +48,8 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+ELEVENLABS_API_KEY = "sk_45903bddf1c5c439c585976e31507312e2cf5d684f19c233"

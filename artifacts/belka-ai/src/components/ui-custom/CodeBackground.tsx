@@ -33,28 +33,41 @@ interface Particle {
   text: string;
   opacity: number;
   size: number;
-  type: "code" | "symbol" | "dot";
+  type: "code" | "symbol" | "dot" | "glow";
   life: number;
   maxLife: number;
+  color: string;
 }
 
+const NEON_COLORS = [
+  "99, 130, 255",
+  "139, 92, 246",
+  "99, 102, 241",
+  "168, 85, 247",
+  "59, 130, 246",
+  "79, 70, 229",
+];
+
 function createParticle(w: number, h: number): Particle {
-  const type = Math.random() < 0.15 ? "code" : Math.random() < 0.5 ? "symbol" : "dot";
+  const rand = Math.random();
+  const type = rand < 0.08 ? "glow" : rand < 0.18 ? "code" : rand < 0.45 ? "symbol" : "dot";
+  const color = NEON_COLORS[Math.floor(Math.random() * NEON_COLORS.length)];
   return {
     x: Math.random() * w,
     y: Math.random() * h,
-    vx: (Math.random() - 0.5) * 0.3,
-    vy: -Math.random() * 0.4 - 0.1,
+    vx: (Math.random() - 0.5) * 0.25,
+    vy: -Math.random() * 0.35 - 0.08,
     text: type === "code"
       ? CODE_SNIPPETS[Math.floor(Math.random() * CODE_SNIPPETS.length)]
       : type === "symbol"
       ? SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)]
       : "",
-    opacity: Math.random() * 0.12 + 0.03,
-    size: type === "code" ? 10 : type === "symbol" ? 12 : Math.random() * 2 + 1,
+    opacity: type === "glow" ? Math.random() * 0.08 + 0.02 : Math.random() * 0.1 + 0.02,
+    size: type === "code" ? 10 : type === "symbol" ? 12 : type === "glow" ? Math.random() * 40 + 20 : Math.random() * 2 + 0.8,
     type,
     life: 0,
-    maxLife: 600 + Math.random() * 400,
+    maxLife: 700 + Math.random() * 500,
+    color,
   };
 }
 
@@ -81,7 +94,7 @@ export function CodeBackground() {
     resize();
     window.addEventListener("resize", resize);
 
-    const count = Math.min(Math.floor(w * h / 12000), 80);
+    const count = Math.min(Math.floor(w * h / 14000), 70);
     particlesRef.current = Array.from({ length: count }, () => createParticle(w, h));
 
     function draw() {
@@ -94,24 +107,33 @@ export function CodeBackground() {
         p.y += p.vy;
         p.life++;
 
-        const fadeFactor = p.life < 60
-          ? p.life / 60
-          : p.life > p.maxLife - 60
-          ? (p.maxLife - p.life) / 60
+        const fadeFactor = p.life < 80
+          ? p.life / 80
+          : p.life > p.maxLife - 80
+          ? (p.maxLife - p.life) / 80
           : 1;
 
         const alpha = p.opacity * fadeFactor;
 
-        if (p.type === "dot") {
+        if (p.type === "glow") {
+          const gradient = ctx!.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
+          gradient.addColorStop(0, `rgba(${p.color}, ${alpha * 0.6})`);
+          gradient.addColorStop(0.5, `rgba(${p.color}, ${alpha * 0.2})`);
+          gradient.addColorStop(1, `rgba(${p.color}, 0)`);
           ctx!.beginPath();
           ctx!.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-          ctx!.fillStyle = `rgba(99, 130, 255, ${alpha})`;
+          ctx!.fillStyle = gradient;
+          ctx!.fill();
+        } else if (p.type === "dot") {
+          ctx!.beginPath();
+          ctx!.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx!.fillStyle = `rgba(${p.color}, ${alpha})`;
           ctx!.fill();
         } else {
           ctx!.font = `${p.size}px 'Fira Code', monospace`;
           ctx!.fillStyle = p.type === "code"
-            ? `rgba(99, 130, 255, ${alpha * 0.7})`
-            : `rgba(160, 120, 255, ${alpha * 0.9})`;
+            ? `rgba(${p.color}, ${alpha * 0.6})`
+            : `rgba(${p.color}, ${alpha * 0.8})`;
           ctx!.fillText(p.text, p.x, p.y);
         }
 
@@ -123,14 +145,16 @@ export function CodeBackground() {
 
       for (let i = 0; i < particles.length; i++) {
         for (let j = i + 1; j < particles.length; j++) {
+          if (particles[i].type !== "dot" || particles[j].type !== "dot") continue;
           const dx = particles[i].x - particles[j].x;
           const dy = particles[i].y - particles[j].y;
           const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 120 && particles[i].type === "dot" && particles[j].type === "dot") {
+          if (dist < 150) {
+            const lineAlpha = 0.025 * (1 - dist / 150);
             ctx!.beginPath();
             ctx!.moveTo(particles[i].x, particles[i].y);
             ctx!.lineTo(particles[j].x, particles[j].y);
-            ctx!.strokeStyle = `rgba(99, 130, 255, ${0.03 * (1 - dist / 120)})`;
+            ctx!.strokeStyle = `rgba(${particles[i].color}, ${lineAlpha})`;
             ctx!.lineWidth = 0.5;
             ctx!.stroke();
           }
@@ -152,7 +176,7 @@ export function CodeBackground() {
     <canvas
       ref={canvasRef}
       className="fixed inset-0 z-0 pointer-events-none"
-      style={{ opacity: 0.8 }}
+      style={{ opacity: 0.7 }}
     />
   );
 }

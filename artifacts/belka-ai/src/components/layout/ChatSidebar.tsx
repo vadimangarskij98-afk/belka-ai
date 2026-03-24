@@ -403,23 +403,16 @@ export function ChatSidebar({ collapsed, onToggle, activeConvId, isPending }: Ch
 }
 
 function BelkaLogo({ size = 32 }: { size?: number }) {
+  const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="belka-grad" x1="0" y1="0" x2="32" y2="32">
-          <stop offset="0%" stopColor="hsl(217, 91%, 60%)" />
-          <stop offset="100%" stopColor="hsl(259, 90%, 61%)" />
-        </linearGradient>
-      </defs>
-      <rect width="32" height="32" rx="8" fill="url(#belka-grad)" />
-      <path d="M10 22c0-3 2-5.5 4-7-1.5-1-2.5-2.5-2.5-4.5C11.5 7.5 14 6 16 6c2 0 4.5 1.5 4.5 4.5 0 2-1 3.5-2.5 4.5 2 1.5 4 4 4 7 0 1.5-.5 2.5-1.5 3-1 .5-2.5.5-4.5.5s-3.5 0-4.5-.5c-1-.5-1.5-1.5-1.5-3z" fill="white" fillOpacity="0.95"/>
-      <circle cx="14" cy="12" r="1.2" fill="hsl(217, 91%, 60%)"/>
-      <circle cx="18" cy="12" r="1.2" fill="hsl(217, 91%, 60%)"/>
-      <ellipse cx="16" cy="14" rx="1" ry="0.6" fill="hsl(217, 91%, 40%)"/>
-      <path d="M8 9c-1-2 0-4 2-4.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" fill="none" opacity="0.8"/>
-      <path d="M24 9c1-2 0-4-2-4.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" fill="none" opacity="0.8"/>
-      <path d="M12 22c1 1.5 2.5 2 4 2s3-.5 4-2" stroke="hsl(217, 91%, 50%)" strokeWidth="1" strokeLinecap="round" fill="none" opacity="0.5"/>
-    </svg>
+    <img
+      src={`${BASE}/belka-logo.png`}
+      alt="BELKA AI"
+      width={size}
+      height={size}
+      className="rounded-lg object-cover"
+      style={{ width: size, height: size }}
+    />
   );
 }
 
