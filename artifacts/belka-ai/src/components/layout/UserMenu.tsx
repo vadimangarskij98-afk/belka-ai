@@ -5,6 +5,7 @@ import { t } from "@/lib/i18n";
 import { SettingsModal } from "@/components/modals/SettingsModal";
 import { PricingModal } from "@/components/modals/PricingModal";
 import { ProfileModal } from "@/components/modals/ProfileModal";
+import { DocsModal } from "@/components/modals/DocsModal";
 import { useLocation } from "wouter";
 
 const REQUEST_LIMITS: Record<string, number> = {
@@ -41,12 +42,13 @@ export function UserMenu({ compact }: { compact?: boolean }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pricingOpen, setPricingOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [docsOpen, setDocsOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuPos, setMenuPos] = useState({ bottom: 0, left: 0 });
   const [, navigate] = useLocation();
 
-  const plan = localStorage.getItem("belka-plan") || user?.plan || "free";
+  const plan = user?.plan || localStorage.getItem("belka-plan") || "free";
   const [apiRequestData, setApiRequestData] = useState<{ used: number; limit: number } | null>(null);
   const [barAnimated, setBarAnimated] = useState(false);
 
@@ -102,8 +104,14 @@ export function UserMenu({ compact }: { compact?: boolean }) {
           onClick={handleOpen}
           className="flex items-center gap-2 w-full px-2 py-2 rounded-lg hover:bg-muted transition-colors"
         >
-          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-primary to-secondary flex items-center justify-center text-white text-xs font-bold flex-shrink-0 relative">
-            {initial}
+          <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 relative border border-primary/30">
+            {(() => { const av = localStorage.getItem(`belka-avatar-${user?.id}`) || localStorage.getItem("belka-avatar"); return av && av.length > 5 ? av : null; })() ? (
+              <img src={(localStorage.getItem(`belka-avatar-${user?.id}`) || localStorage.getItem("belka-avatar"))!} alt="avatar" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full bg-gradient-to-tr from-primary to-secondary flex items-center justify-center text-white text-xs font-bold">
+                {initial}
+              </div>
+            )}
             {isAdmin && (
               <div className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-yellow-500 flex items-center justify-center">
                 <Shield size={7} className="text-white" />
@@ -159,7 +167,7 @@ export function UserMenu({ compact }: { compact?: boolean }) {
               <MenuBtn icon={<User size={15} />} label={t("profile")} onClick={() => { setOpen(false); setProfileOpen(true); }} />
               <MenuBtn icon={<Settings size={15} />} label={t("settings")} onClick={() => { setOpen(false); setSettingsOpen(true); }} />
               <MenuBtn icon={<CreditCard size={15} />} label={t("subscriptions")} onClick={() => { setOpen(false); setPricingOpen(true); }} />
-              <MenuBtn icon={<FileText size={15} />} label={t("documentation")} onClick={() => { setOpen(false); navigate("/docs"); }} />
+              <MenuBtn icon={<FileText size={15} />} label={t("documentation")} onClick={() => { setOpen(false); setDocsOpen(true); }} />
               {isAdmin && (
                 <MenuBtn icon={<Shield size={15} />} label={t("adminPanel")} onClick={() => { setOpen(false); navigate("/admin"); }} highlight />
               )}
@@ -174,6 +182,7 @@ export function UserMenu({ compact }: { compact?: boolean }) {
       <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} />
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <PricingModal open={pricingOpen} onClose={() => setPricingOpen(false)} />
+      <DocsModal open={docsOpen} onClose={() => setDocsOpen(false)} />
     </>
   );
 }

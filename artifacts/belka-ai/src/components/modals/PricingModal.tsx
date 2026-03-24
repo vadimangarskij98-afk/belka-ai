@@ -6,21 +6,21 @@ const planMeta: Record<string, { icon: typeof Sparkles; color: string; popular?:
   free: {
     icon: Sparkles,
     color: "text-muted-foreground",
-    features: ["10K tokens", "1 agent", "Community support"],
-    featuresRu: ["10K токенов", "1 агент", "Поддержка сообщества"],
+    features: ["10K requests", "1 agent", "Community support"],
+    featuresRu: ["10K запросов", "1 агент", "Поддержка сообщества"],
   },
   pro: {
     icon: Zap,
     color: "text-primary",
     popular: true,
-    features: ["500K tokens", "5 agents", "Priority support", "MCP access"],
-    featuresRu: ["500K токенов", "5 агентов", "Приоритетная поддержка", "Доступ к MCP"],
+    features: ["500K requests", "5 agents", "Priority support", "MCP access"],
+    featuresRu: ["500K запросов", "5 агентов", "Приоритетная поддержка", "Доступ к MCP"],
   },
   enterprise: {
     icon: Building2,
     color: "text-secondary",
-    features: ["Unlimited tokens", "All agents", "Dedicated support", "Custom models"],
-    featuresRu: ["Без лимитов", "Все агенты", "Выделенная поддержка", "Кастомные модели"],
+    features: ["Unlimited requests", "All agents", "Dedicated support", "Custom models"],
+    featuresRu: ["Безлимитные запросы", "Все агенты", "Выделенная поддержка", "Кастомные модели"],
   },
 };
 
@@ -57,6 +57,7 @@ export function PricingModal({ open, onClose }: { open: boolean; onClose: () => 
   if (!open) return null;
 
   const isRu = getLang() === "ru";
+  const currentUserPlan = (() => { try { return JSON.parse(localStorage.getItem("belka-user") || "{}").plan; } catch { return null; } })() || localStorage.getItem("belka-plan") || "free";
   const hasCard = !!localStorage.getItem("belka-card");
   const maskedCard = hasCard && cardData.number
     ? "•••• •••• •••• " + cardData.number.replace(/\s/g, "").slice(-4)
@@ -111,6 +112,14 @@ export function PricingModal({ open, onClose }: { open: boolean; onClose: () => 
       }
 
       localStorage.setItem("belka-plan", selectedPlan);
+      const storedUser = localStorage.getItem("belka-user");
+      if (storedUser) {
+        try {
+          const userData = JSON.parse(storedUser);
+          userData.plan = selectedPlan;
+          localStorage.setItem("belka-user", JSON.stringify(userData));
+        } catch {}
+      }
       setProcessing(false);
       setSuccess(true);
       setTimeout(() => {
@@ -119,6 +128,7 @@ export function PricingModal({ open, onClose }: { open: boolean; onClose: () => 
         setPromoCode("");
         setPromoResult(null);
         onClose();
+        window.location.reload();
       }, 2000);
     } catch {
       setError(isRu ? "Ошибка соединения" : "Connection error");
@@ -297,11 +307,11 @@ export function PricingModal({ open, onClose }: { open: boolean; onClose: () => 
                   ))}
                 </div>
                 <button
-                  onClick={() => plan.key === "free" ? null : setSelectedPlan(plan.key)}
-                  disabled={plan.key === "free"}
-                  className={`w-full py-1.5 rounded-lg text-xs font-medium transition-colors ${plan.key === "free" ? "bg-muted text-muted-foreground cursor-default" : "bg-primary text-white hover:bg-primary/90"}`}
+                  onClick={() => plan.key === currentUserPlan ? null : setSelectedPlan(plan.key)}
+                  disabled={plan.key === currentUserPlan}
+                  className={`w-full py-1.5 rounded-lg text-xs font-medium transition-colors ${plan.key === currentUserPlan ? "bg-muted text-muted-foreground cursor-default" : "bg-primary text-white hover:bg-primary/90"}`}
                 >
-                  {plan.key === "free" ? (isRu ? "Текущий план" : "Current Plan") : t("choosePlan")}
+                  {plan.key === currentUserPlan ? (isRu ? "Текущий план" : "Current Plan") : t("choosePlan")}
                 </button>
               </div>
             );

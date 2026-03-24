@@ -46,7 +46,7 @@ workspace/
 - `ai_models` — AI-модели
 - `memory` — память агентов
 - `subscription_plans` — планы подписки
-- `token_usage` — использование токенов
+- `token_usage` — использование запросов (requests)
 - `repositories` — репозитории
 - `promo_codes` — промокоды
 

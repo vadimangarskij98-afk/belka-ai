@@ -73,6 +73,13 @@ export function useAuthProvider(): AuthContextType {
       const data = await res.json();
       localStorage.setItem("belka-token", data.token);
       localStorage.setItem("belka-user", JSON.stringify(data.user));
+      const avatarStyles = ["bottts", "bottts-neutral", "thumbs", "shapes", "icons"];
+      const seed = username + Date.now();
+      let hash = 0;
+      for (let i = 0; i < seed.length; i++) { hash = ((hash << 5) - hash) + seed.charCodeAt(i); hash |= 0; }
+      const style = avatarStyles[Math.abs(hash) % avatarStyles.length];
+      const avatarUrl = `https://api.dicebear.com/9.x/${style}/svg?seed=${encodeURIComponent(seed)}&backgroundColor=0a0a23,1a1a3e,0d1b2a,1b2838&backgroundType=gradientLinear`;
+      localStorage.setItem(`belka-avatar-${data.user.id}`, avatarUrl);
       setToken(data.token);
       setUser(data.user);
       return data.user;
@@ -84,6 +91,7 @@ export function useAuthProvider(): AuthContextType {
   const logout = useCallback(() => {
     localStorage.removeItem("belka-token");
     localStorage.removeItem("belka-user");
+    localStorage.removeItem("belka-plan");
     setToken(null);
     setUser(null);
   }, []);

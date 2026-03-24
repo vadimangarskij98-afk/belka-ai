@@ -477,6 +477,8 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [attachedPreview, setAttachedPreview] = useState<string | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
 
   const [profileOpen, setProfileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -667,6 +669,7 @@ export default function ChatPage() {
     if (attachedFile) {
       content += `\n\n[Файл: ${attachedFile.name}]`;
       setAttachedFile(null);
+      setAttachedPreview(null);
     }
 
     setInput("");
@@ -936,7 +939,7 @@ export default function ChatPage() {
             ) : (
               <div className="max-w-3xl mx-auto space-y-4 pt-4">
                 {messages.map((msg: any, i: number) => (
-                  <MessageBubble key={msg.id || i} msg={msg} isLast={i === messages.length - 1} isStreaming={streaming.isStreaming && i === messages.length - 1 && msg.role !== "user"} />
+                  <MessageBubble key={msg.id || i} msg={msg} isLast={i === messages.length - 1} isStreaming={streaming.isStreaming && i === messages.length - 1 && msg.role !== "user"} onImagePreview={setImagePreviewUrl} />
                 ))}
 
                 {streaming.isStreaming && <StreamingIndicator state={streaming} />}
@@ -1020,10 +1023,26 @@ export default function ChatPage() {
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-background via-background to-transparent pt-8 pb-3 px-4 md:px-6 lg:px-16">
           <div className="max-w-3xl mx-auto">
             {attachedFile && (
-              <div className="mb-1.5 flex items-center gap-2 px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/20 text-xs text-primary w-fit">
-                <Paperclip size={12} />
-                <span className="truncate max-w-[180px]">{attachedFile.name}</span>
-                <button onClick={() => setAttachedFile(null)} className="text-primary/60 hover:text-primary ml-1">&times;</button>
+              <div className="mb-1.5 flex items-center gap-2 w-fit">
+                {attachedPreview ? (
+                  <div className="relative group">
+                    <img
+                      src={attachedPreview}
+                      alt={attachedFile.name}
+                      className="h-16 max-w-[200px] rounded-lg border border-primary/20 object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                      onClick={() => setImagePreviewUrl(attachedPreview)}
+                    />
+                    <button onClick={() => { setAttachedFile(null); setAttachedPreview(null); }} className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs shadow-lg hover:bg-red-600">
+                      <X size={10} />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/20 text-xs text-primary">
+                    <Paperclip size={12} />
+                    <span className="truncate max-w-[180px]">{attachedFile.name}</span>
+                    <button onClick={() => setAttachedFile(null)} className="text-primary/60 hover:text-primary ml-1">&times;</button>
+                  </div>
+                )}
               </div>
             )}
             <div className="glass-panel rounded-xl p-1.5 flex flex-col shadow-xl border border-border focus-within:border-primary/50 transition-all duration-300">
@@ -1045,7 +1064,19 @@ export default function ChatPage() {
 
               <div className="flex items-center justify-between px-1.5 pb-0.5 pt-1">
                 <div className="flex items-center gap-0.5">
-                  <input ref={fileInputRef} type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) setAttachedFile(f); }} />
+                  <input ref={fileInputRef} type="file" className="hidden" onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) {
+                      setAttachedFile(f);
+                      if (f.type.startsWith("image/")) {
+                        const reader = new FileReader();
+                        reader.onload = (ev) => setAttachedPreview(ev.target?.result as string);
+                        reader.readAsDataURL(f);
+                      } else {
+                        setAttachedPreview(null);
+                      }
+                    }
+                  }} />
                   <button onClick={() => fileInputRef.current?.click()} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors" title="Attach file">
                     <Paperclip size={16} />
                   </button>
@@ -1120,6 +1151,22 @@ export default function ChatPage() {
       <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} />
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <PricingModal open={pricingOpen} onClose={() => setPricingOpen(false)} />
+
+      {imagePreviewUrl && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" onClick={() => setImagePreviewUrl(null)}>
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+          <div className="relative max-w-[90vw] max-h-[90vh]" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setImagePreviewUrl(null)} className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-black/80 text-white flex items-center justify-center shadow-lg hover:bg-black z-10 border border-white/20">
+              <X size={16} />
+            </button>
+            <img src={imagePreviewUrl} alt="Preview" className="max-w-full max-h-[85vh] rounded-xl shadow-2xl object-contain" />
+            <a href={imagePreviewUrl} download="belka-image.png" target="_blank" rel="noopener noreferrer"
+              className="absolute bottom-3 right-3 p-2.5 rounded-lg bg-black/60 backdrop-blur-sm text-white hover:bg-black/80 transition-colors border border-white/20">
+              <Download size={18} />
+            </a>
+          </div>
+        </div>
+      )}
       <GitHubModal
         open={githubOpen}
         onClose={() => setGithubOpen(false)}
@@ -1171,10 +1218,11 @@ export default function ChatPage() {
   );
 }
 
-function MessageBubble({ msg, isLast, isStreaming }: {
+function MessageBubble({ msg, isLast, isStreaming, onImagePreview }: {
   msg: any;
   isLast: boolean;
   isStreaming?: boolean;
+  onImagePreview?: (url: string) => void;
 }) {
   const parts = useMemo(() => parseContent(msg.content || ""), [msg.content]);
   const sources = useMemo(() => {
@@ -1229,7 +1277,13 @@ function MessageBubble({ msg, isLast, isStreaming }: {
               <span className="text-[10px] font-semibold text-violet-400 uppercase tracking-wider">Изображение</span>
             </div>
             <div className="relative group/img rounded-xl overflow-hidden">
-              <img src={imageUrl} alt="Generated image" className="w-full max-w-md rounded-xl" loading="lazy" />
+              <img
+                src={imageUrl}
+                alt="Generated image"
+                className="w-full max-w-md rounded-xl cursor-pointer hover:opacity-90 transition-opacity"
+                loading="lazy"
+                onClick={() => onImagePreview?.(imageUrl)}
+              />
               <a
                 href={imageUrl}
                 download={`belka-image.png`}
