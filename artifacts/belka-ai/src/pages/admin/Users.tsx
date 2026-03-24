@@ -5,7 +5,7 @@ import { t } from "@/lib/i18n";
 export default function AdminUsers() {
   const { data, isLoading } = useListUsers();
 
-  const users = data?.users || [
+  const users: Array<{ id: string; email: string; username: string; role: string; plan: string; createdAt: string }> = data?.users || [
     { id: "1", email: "alex@example.com", username: "alex_dev", role: "admin", plan: "enterprise", createdAt: "2024-01-15" },
     { id: "2", email: "sarah@startup.io", username: "sarah_codes", role: "user", plan: "pro", createdAt: "2024-02-02" },
     { id: "3", email: "john@hobby.dev", username: "johnny", role: "user", plan: "free", createdAt: "2024-03-10" },

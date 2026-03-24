@@ -8,7 +8,7 @@ import { useAuth } from "@/lib/auth";
 export default function ProfilePage() {
   const { user } = useAuth();
   const [, navigate] = useLocation();
-  const [bio, setBio] = useState(user?.bio || "");
+  const [bio, setBio] = useState("");
   const [displayName, setDisplayName] = useState(user?.username || "");
   const [saved, setSaved] = useState(false);
 

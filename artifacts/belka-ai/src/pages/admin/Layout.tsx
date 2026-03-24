@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, Box, Users, CreditCard, Network, ArrowLeft, Mic } from "lucide-react";
+import { LayoutDashboard, Box, Users, CreditCard, Network, ArrowLeft, Mic, Gift } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n";
 
@@ -10,6 +10,7 @@ const navItems = [
   { href: "/admin/agents", icon: Network, labelKey: "agents" as const },
   { href: "/admin/users", icon: Users, labelKey: "users" as const },
   { href: "/admin/subscriptions", icon: CreditCard, labelKey: "subscriptions" as const },
+  { href: "/admin/referrals", icon: Gift, labelKey: "referralSettings" as const },
   { href: "/admin/voice", icon: Mic, labelKey: "voiceAssistant" as const },
 ];
 

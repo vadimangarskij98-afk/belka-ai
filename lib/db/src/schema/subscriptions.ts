@@ -35,6 +35,32 @@ export const tokenUsageTable = pgTable("token_usage", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const referralsTable = pgTable("referrals", {
+  id: serial("id").primaryKey(),
+  referrerId: integer("referrer_id").notNull(),
+  referredId: integer("referred_id").notNull(),
+  bonusAwarded: boolean("bonus_awarded").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const referralSettingsTable = pgTable("referral_settings", {
+  id: serial("id").primaryKey(),
+  bonusRequests: integer("bonus_requests").notNull().default(7),
+  isActive: boolean("is_active").notNull().default(true),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const apiRequestsTable = pgTable("api_requests", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  endpoint: varchar("endpoint", { length: 255 }).notNull(),
+  method: varchar("method", { length: 10 }).notNull(),
+  statusCode: integer("status_code"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export type SubscriptionPlan = typeof subscriptionPlansTable.$inferSelect;
 export type PromoCode = typeof promoCodesTable.$inferSelect;
 export type TokenUsage = typeof tokenUsageTable.$inferSelect;
+export type Referral = typeof referralsTable.$inferSelect;
+export type ReferralSettings = typeof referralSettingsTable.$inferSelect;

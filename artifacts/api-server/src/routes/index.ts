@@ -20,8 +20,21 @@ import workspaceRouter from "./workspace";
 import terminalRouter from "./terminal";
 import gitRouter from "./git";
 import previewRouter from "./preview";
+import referralsRouter from "./referrals";
 
 const JWT_SECRET = process.env.JWT_SECRET || "belka-ai-secret-key-2024";
+
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const decoded = jwt.verify(token, JWT_SECRET) as { id: number };
+    (req as any).userId = decoded.id;
+    next();
+  } catch {
+    res.status(401).json({ error: "Invalid token" });
+  }
+}
 
 async function requireAdmin(req: Request, res: Response, next: NextFunction) {
   try {
@@ -32,6 +45,7 @@ async function requireAdmin(req: Request, res: Response, next: NextFunction) {
     if (users.length === 0 || users[0].role !== "admin") {
       res.status(403).json({ error: "Forbidden: admin access required" }); return;
     }
+    (req as any).userId = decoded.id;
     next();
   } catch {
     res.status(401).json({ error: "Invalid token" });
@@ -42,23 +56,24 @@ const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use("/auth", authRouter);
-router.use("/conversations", conversationsRouter);
+router.use("/conversations", requireAuth, conversationsRouter);
 router.use("/agents", agentsRouter);
 router.use("/admin", requireAdmin, adminRouter);
 router.use("/voice", voiceRouter);
-router.use("/memory", memoryRouter);
-router.use("/repositories", repositoriesRouter);
-router.use("/search", searchRouter);
-router.use("/github", githubRouter);
-router.use("/uploads", uploadsRouter);
-router.use("/code", codeRunnerRouter);
+router.use("/memory", requireAuth, memoryRouter);
+router.use("/repositories", requireAuth, repositoriesRouter);
+router.use("/search", requireAuth, searchRouter);
+router.use("/github", requireAuth, githubRouter);
+router.use("/uploads", requireAuth, uploadsRouter);
+router.use("/code", requireAuth, codeRunnerRouter);
 router.use("/subscriptions", subscriptionsRouter);
-router.use(workspaceRouter);
-router.use(terminalRouter);
-router.use(gitRouter);
-router.use(previewRouter);
+router.use("/referrals", referralsRouter);
+router.use(requireAuth, workspaceRouter);
+router.use(requireAuth, terminalRouter);
+router.use(requireAuth, gitRouter);
+router.use(requireAuth, previewRouter);
 
-router.post("/belka/chat", async (req: Request, res: Response) => {
+router.post("/belka/chat", requireAuth, async (req: Request, res: Response) => {
   try {
     const response = await fetch("https://belka-coder-api-production.up.railway.app/chat", {
       method: "POST",

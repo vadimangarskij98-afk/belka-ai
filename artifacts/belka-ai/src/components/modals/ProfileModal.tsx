@@ -1,7 +1,16 @@
 import { useState, useEffect } from "react";
-import { X, User, Camera, Save, Mail, Crown, Pencil, ArrowLeft, Calendar } from "lucide-react";
+import { X, User, Camera, Save, Mail, Crown, Pencil, ArrowLeft, Calendar, Gift, Copy, Check } from "lucide-react";
 import { t, getLang } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
+
+const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+const API = `${BASE}/api`.replace(/\/\/+/g, "/");
+function getAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem("belka-token");
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  return headers;
+}
 
 const AVATAR_STYLES = [
   "bottts",
@@ -47,6 +56,11 @@ export function ProfileModal({ open, onClose }: { open: boolean; onClose: () => 
   const [displayName, setDisplayName] = useState(() => localStorage.getItem(`belka-display-name-${user?.id}`) || user?.username || "");
   const [saved, setSaved] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState("");
+  const [referralCode, setReferralCode] = useState("");
+  const [referralStats, setReferralStats] = useState<{ totalReferred: number; bonusRequests: number }>({ totalReferred: 0, bonusRequests: 0 });
+  const [copied, setCopied] = useState(false);
+  const [refCodeInput, setRefCodeInput] = useState("");
+  const [refApplyMsg, setRefApplyMsg] = useState("");
 
   useEffect(() => {
     if (open && user) {
@@ -54,6 +68,12 @@ export function ProfileModal({ open, onClose }: { open: boolean; onClose: () => 
       setDisplayName(localStorage.getItem(`belka-display-name-${user.id}`) || user.username);
       setBio(localStorage.getItem(`belka-bio-${user.id}`) || "");
       setEditing(false);
+      setRefApplyMsg("");
+      setRefCodeInput("");
+      fetch(`${API}/referrals/my-code`, { headers: getAuthHeaders() })
+        .then(r => r.json()).then(d => { if (d.referralCode) setReferralCode(d.referralCode); }).catch(() => {});
+      fetch(`${API}/referrals/stats`, { headers: getAuthHeaders() })
+        .then(r => r.json()).then(d => { setReferralStats({ totalReferred: d.totalReferred || 0, bonusRequests: d.bonusRequests || 0 }); }).catch(() => {});
     }
   }, [open, user]);
 
@@ -209,6 +229,55 @@ export function ProfileModal({ open, onClose }: { open: boolean; onClose: () => 
               </div>
             </div>
           </div>
+
+          {referralCode && (
+            <div className="p-4 rounded-xl bg-muted/30 border border-border space-y-3">
+              <div className="flex items-center gap-2 mb-1">
+                <Gift size={16} className="text-primary" />
+                <span className="text-sm font-semibold text-foreground">{t("referralTitle")}</span>
+              </div>
+              <p className="text-xs text-muted-foreground">{t("referralDesc")}</p>
+              <div className="flex items-center gap-2">
+                <input
+                  readOnly
+                  value={referralCode}
+                  className="flex-1 px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground font-mono"
+                />
+                <button
+                  onClick={() => { navigator.clipboard.writeText(referralCode); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+                  className="p-2 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
+                >
+                  {copied ? <Check size={16} /> : <Copy size={16} />}
+                </button>
+              </div>
+              <div className="flex gap-3 text-xs">
+                <span className="text-muted-foreground">{t("referralTotal")}: <span className="font-bold text-foreground">{referralStats.totalReferred}</span></span>
+                <span className="text-muted-foreground">{t("referralBonus")}: <span className="font-bold text-primary">{referralStats.bonusRequests}</span></span>
+              </div>
+              <div className="flex items-center gap-2 mt-2">
+                <input
+                  value={refCodeInput}
+                  onChange={e => setRefCodeInput(e.target.value)}
+                  placeholder={t("referralApply")}
+                  className="flex-1 px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground"
+                />
+                <button
+                  onClick={async () => {
+                    if (!refCodeInput.trim()) return;
+                    try {
+                      const res = await fetch(`${API}/referrals/apply`, { method: "POST", headers: getAuthHeaders(), body: JSON.stringify({ code: refCodeInput.trim() }) });
+                      const data = await res.json();
+                      setRefApplyMsg(res.ok ? t("referralApplied") : data.error || t("referralInvalid"));
+                    } catch { setRefApplyMsg(t("referralInvalid")); }
+                  }}
+                  className="px-3 py-2 rounded-lg bg-secondary text-white text-sm font-medium hover:bg-secondary/90 transition-colors"
+                >
+                  {t("referralApplyBtn")}
+                </button>
+              </div>
+              {refApplyMsg && <p className={`text-xs ${refApplyMsg === t("referralApplied") ? "text-green-400" : "text-red-400"}`}>{refApplyMsg}</p>}
+            </div>
+          )}
 
           <button
             onClick={() => setEditing(true)}

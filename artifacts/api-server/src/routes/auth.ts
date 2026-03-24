@@ -1,12 +1,23 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import { db, usersTable, tokenUsageTable, subscriptionPlansTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 
 const router: IRouter = Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || "belka-ai-secret-key-2024";
+
+function generateReferralCode(): string {
+  return "BLK" + crypto.randomBytes(4).toString("hex").toUpperCase();
+}
+
+function sanitizeInput(str: string): string {
+  return str.trim().slice(0, 255);
+}
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 router.get("/me", async (req, res) => {
   try {
@@ -28,6 +39,8 @@ router.get("/me", async (req, res) => {
       username: user.username,
       role: user.role,
       plan: user.plan,
+      referralCode: user.referralCode,
+      bonusRequests: user.bonusRequests,
       createdAt: user.createdAt.toISOString(),
     });
   } catch {
@@ -42,13 +55,43 @@ router.post("/register", async (req, res) => {
       res.status(400).json({ error: "All fields required" });
       return;
     }
-    const existing = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
+
+    const cleanEmail = sanitizeInput(email).toLowerCase();
+    const cleanUsername = sanitizeInput(username);
+
+    if (!EMAIL_REGEX.test(cleanEmail)) {
+      res.status(400).json({ error: "Invalid email format" });
+      return;
+    }
+    if (cleanUsername.length < 2 || cleanUsername.length > 50) {
+      res.status(400).json({ error: "Username must be 2-50 characters" });
+      return;
+    }
+    if (password.length < 6) {
+      res.status(400).json({ error: "Password must be at least 6 characters" });
+      return;
+    }
+
+    const existing = await db.select().from(usersTable).where(eq(usersTable.email, cleanEmail)).limit(1);
     if (existing.length > 0) {
       res.status(409).json({ error: "Email already registered" });
       return;
     }
-    const passwordHash = await bcrypt.hash(password, 10);
-    const inserted = await db.insert(usersTable).values({ email, username, passwordHash }).returning();
+
+    const existingUsername = await db.select().from(usersTable).where(eq(usersTable.username, cleanUsername)).limit(1);
+    if (existingUsername.length > 0) {
+      res.status(409).json({ error: "Username already taken" });
+      return;
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const referralCode = generateReferralCode();
+    const inserted = await db.insert(usersTable).values({
+      email: cleanEmail,
+      username: cleanUsername,
+      passwordHash,
+      referralCode,
+    }).returning();
     const user = inserted[0];
     const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "30d" });
     res.status(201).json({
@@ -58,6 +101,8 @@ router.post("/register", async (req, res) => {
         username: user.username,
         role: user.role,
         plan: user.plan,
+        referralCode: user.referralCode,
+        bonusRequests: user.bonusRequests,
         createdAt: user.createdAt.toISOString(),
       },
       token,
@@ -71,7 +116,12 @@ router.post("/register", async (req, res) => {
 router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
-    const users = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
+    if (!email || !password) {
+      res.status(400).json({ error: "Email and password required" });
+      return;
+    }
+    const cleanEmail = sanitizeInput(email).toLowerCase();
+    const users = await db.select().from(usersTable).where(eq(usersTable.email, cleanEmail)).limit(1);
     if (users.length === 0) {
       res.status(401).json({ error: "Invalid credentials" });
       return;
@@ -90,6 +140,8 @@ router.post("/login", async (req, res) => {
         username: user.username,
         role: user.role,
         plan: user.plan,
+        referralCode: user.referralCode,
+        bonusRequests: user.bonusRequests,
         createdAt: user.createdAt.toISOString(),
       },
       token,

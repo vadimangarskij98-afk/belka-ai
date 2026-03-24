@@ -49,6 +49,9 @@ workspace/
 - `token_usage` — использование запросов (requests)
 - `repositories` — репозитории
 - `promo_codes` — промокоды
+- `referrals` — рефералы (referrer -> referred)
+- `referral_settings` — настройки реферальной программы
+- `api_requests` — логирование API вызовов
 
 ## Workflows
 

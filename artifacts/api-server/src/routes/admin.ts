@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, usersTable, conversationsTable, messagesTable, agentsTable, aiModelsTable, subscriptionPlansTable, promoCodesTable, tokenUsageTable } from "@workspace/db";
-import { eq, count, and } from "drizzle-orm";
+import { db, usersTable, conversationsTable, messagesTable, agentsTable, aiModelsTable, subscriptionPlansTable, promoCodesTable, tokenUsageTable, referralsTable, referralSettingsTable, apiRequestsTable } from "@workspace/db";
+import { eq, count, and, gte, sql, desc } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -11,17 +11,68 @@ router.get("/stats", async (req, res) => {
     const [totalMessages] = await db.select({ count: count() }).from(messagesTable);
     const [activeAgents] = await db.select({ count: count() }).from(agentsTable).where(eq(agentsTable.isActive, true));
     const [totalPromos] = await db.select({ count: count() }).from(promoCodesTable);
+    const [totalReferrals] = await db.select({ count: count() }).from(referralsTable);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const todayUsage = await db.select({ total: sql<number>`COALESCE(SUM(${tokenUsageTable.tokensUsed}), 0)` })
+      .from(tokenUsageTable).where(eq(tokenUsageTable.date, today));
+    const requestsToday = Number(todayUsage[0]?.total) || 0;
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const [apiCallsResult] = await db.select({ count: count() }).from(apiRequestsTable)
+      .where(gte(apiRequestsTable.createdAt, todayStart));
+
     res.json({
       totalUsers: Number(totalUsers?.count) || 0,
       totalConversations: Number(totalConversations?.count) || 0,
       totalMessages: Number(totalMessages?.count) || 0,
       activeAgents: Number(activeAgents?.count) || 0,
-      tokensUsedToday: Math.floor(Math.random() * 100000),
-      apiCallsToday: Math.floor(Math.random() * 5000),
+      tokensUsedToday: requestsToday,
+      apiCallsToday: Number(apiCallsResult?.count) || 0,
       totalPromoCodes: Number(totalPromos?.count) || 0,
+      totalReferrals: Number(totalReferrals?.count) || 0,
     });
   } catch (err) {
     req.log.error({ err }, "Admin stats error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/analytics", async (req, res) => {
+  try {
+    const days = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      days.push(d.toISOString().slice(0, 10));
+    }
+
+    const analytics = await Promise.all(days.map(async (date) => {
+      const dayStart = new Date(date);
+      const dayEnd = new Date(date);
+      dayEnd.setDate(dayEnd.getDate() + 1);
+
+      const [usageResult] = await db.select({ total: sql<number>`COALESCE(SUM(${tokenUsageTable.tokensUsed}), 0)` })
+        .from(tokenUsageTable).where(eq(tokenUsageTable.date, date));
+
+      const [messagesResult] = await db.select({ count: count() }).from(messagesTable)
+        .where(and(gte(messagesTable.createdAt, dayStart), sql`${messagesTable.createdAt} < ${dayEnd}`));
+
+      const [newUsersResult] = await db.select({ count: count() }).from(usersTable)
+        .where(and(gte(usersTable.createdAt, dayStart), sql`${usersTable.createdAt} < ${dayEnd}`));
+
+      return {
+        date,
+        requests: Number(usageResult?.total) || 0,
+        messages: Number(messagesResult?.count) || 0,
+        newUsers: Number(newUsersResult?.count) || 0,
+      };
+    }));
+
+    res.json({ analytics });
+  } catch (err) {
+    req.log.error({ err }, "Analytics error");
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -109,7 +160,9 @@ router.get("/users", async (req, res) => {
     res.json({
       users: users.map(u => ({
         id: String(u.id), email: u.email, username: u.username,
-        role: u.role, plan: u.plan, createdAt: u.createdAt.toISOString(),
+        role: u.role, plan: u.plan, referralCode: u.referralCode,
+        bonusRequests: u.bonusRequests,
+        createdAt: u.createdAt.toISOString(),
       })),
       total: users.length,
     });
@@ -119,23 +172,58 @@ router.get("/users", async (req, res) => {
   }
 });
 
+router.put("/users/:id/role", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { role } = req.body;
+    if (!["user", "admin"].includes(role)) {
+      res.status(400).json({ error: "Invalid role" }); return;
+    }
+    const updated = await db.update(usersTable).set({ role }).where(eq(usersTable.id, id)).returning();
+    if (updated.length === 0) { res.status(404).json({ error: "User not found" }); return; }
+    res.json({ success: true, user: { id: String(updated[0].id), role: updated[0].role } });
+  } catch (err) {
+    req.log.error({ err }, "Update user role error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put("/users/:id/plan", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { plan } = req.body;
+    if (!["free", "pro", "enterprise"].includes(plan)) {
+      res.status(400).json({ error: "Invalid plan" }); return;
+    }
+    const updated = await db.update(usersTable).set({ plan }).where(eq(usersTable.id, id)).returning();
+    if (updated.length === 0) { res.status(404).json({ error: "User not found" }); return; }
+    res.json({ success: true, user: { id: String(updated[0].id), plan: updated[0].plan } });
+  } catch (err) {
+    req.log.error({ err }, "Update user plan error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/users/:id", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    await db.delete(usersTable).where(eq(usersTable.id, id));
+    res.status(204).send();
+  } catch (err) {
+    req.log.error({ err }, "Delete user error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/subscriptions", async (req, res) => {
   try {
     const plans = await db.select().from(subscriptionPlansTable);
     res.json({
       plans: plans.map(p => ({
-        id: String(p.id),
-        planId: p.planId,
-        name: p.name,
-        description: p.description,
-        price: p.price,
-        discountPercent: p.discountPercent,
-        tokensPerMonth: p.tokensPerMonth,
-        agentsLimit: p.agentsLimit,
-        features: p.features ? JSON.parse(p.features) : [],
-        isActive: p.isActive,
-        createdAt: p.createdAt.toISOString(),
-        updatedAt: p.updatedAt.toISOString(),
+        id: String(p.id), planId: p.planId, name: p.name, description: p.description,
+        price: p.price, discountPercent: p.discountPercent, tokensPerMonth: p.tokensPerMonth,
+        agentsLimit: p.agentsLimit, features: p.features ? JSON.parse(p.features) : [],
+        isActive: p.isActive, createdAt: p.createdAt.toISOString(), updatedAt: p.updatedAt.toISOString(),
       })),
     });
   } catch (err) {
@@ -276,6 +364,67 @@ router.get("/token-usage/:userId", async (req, res) => {
     res.json({ tokensUsed: usage[0]?.tokensUsed || 0, date: today });
   } catch (err) {
     req.log.error({ err }, "Token usage error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/referral-settings", async (req, res) => {
+  try {
+    const settings = await db.select().from(referralSettingsTable).limit(1);
+    if (settings.length === 0) {
+      res.json({ bonusRequests: 7, isActive: true });
+      return;
+    }
+    res.json({
+      bonusRequests: settings[0].bonusRequests,
+      isActive: settings[0].isActive,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Get referral settings error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put("/referral-settings", async (req, res) => {
+  try {
+    const { bonusRequests, isActive } = req.body;
+    const existing = await db.select().from(referralSettingsTable).limit(1);
+    if (existing.length === 0) {
+      await db.insert(referralSettingsTable).values({
+        bonusRequests: bonusRequests || 7,
+        isActive: isActive !== false,
+      });
+    } else {
+      await db.update(referralSettingsTable).set({
+        ...(bonusRequests !== undefined && { bonusRequests }),
+        ...(isActive !== undefined && { isActive }),
+        updatedAt: new Date(),
+      }).where(eq(referralSettingsTable.id, existing[0].id));
+    }
+    res.json({ success: true, bonusRequests: bonusRequests || existing[0]?.bonusRequests || 7, isActive: isActive !== undefined ? isActive : existing[0]?.isActive });
+  } catch (err) {
+    req.log.error({ err }, "Update referral settings error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/referrals", async (req, res) => {
+  try {
+    const referrals = await db.select().from(referralsTable).orderBy(desc(referralsTable.createdAt));
+    const data = await Promise.all(referrals.map(async (r) => {
+      const referrer = await db.select({ username: usersTable.username }).from(usersTable).where(eq(usersTable.id, r.referrerId)).limit(1);
+      const referred = await db.select({ username: usersTable.username }).from(usersTable).where(eq(usersTable.id, r.referredId)).limit(1);
+      return {
+        id: r.id,
+        referrer: referrer[0]?.username || "Unknown",
+        referred: referred[0]?.username || "Unknown",
+        bonusAwarded: r.bonusAwarded,
+        createdAt: r.createdAt.toISOString(),
+      };
+    }));
+    res.json({ referrals: data });
+  } catch (err) {
+    req.log.error({ err }, "Admin referrals error");
     res.status(500).json({ error: "Internal server error" });
   }
 });

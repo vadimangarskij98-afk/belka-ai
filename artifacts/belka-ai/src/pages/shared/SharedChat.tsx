@@ -134,7 +134,7 @@ export default function SharedChat() {
                     </div>
                   </div>
                 )}
-                {imageUrl && <ImageDisplay url={imageUrl} />}
+                {imageUrl && <ImageDisplay src={imageUrl} />}
                 {msg.role === 'user' ? (
                   <div className="px-3 py-2 rounded-2xl rounded-tr-sm bg-primary text-primary-foreground text-sm leading-relaxed shadow-lg shadow-primary/10">{msg.content}</div>
                 ) : (

@@ -11,7 +11,7 @@ import { t } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import { AgentRole } from "@workspace/api-client-react";
 
-const fadeUp = {
+const fadeUp: any = {
   hidden: { opacity: 0, y: 24 },
   visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: i * 0.1, duration: 0.5, ease: "easeOut" } }),
 };
@@ -163,7 +163,7 @@ function StatsSection() {
   const inView = useInView(ref, { once: true });
 
   const stats = [
-    { value: "15+", label: t("statsModels") },
+    { value: "∞", label: t("statsCapabilities") },
     { value: "6", label: t("statsAgents") },
     { value: "50K+", label: t("statsMessages") },
     { value: "99.9%", label: t("statsUptime") },
@@ -233,7 +233,7 @@ function PricingSection() {
       desc: t("pricingFreeDesc"),
       features: [
         "5 " + t("conversations") + "/" + t("pricingDay"),
-        "GPT-4o Mini",
+        "BELKA CODER",
         t("featureVoice"),
         t("pricingBasicSupport"),
       ],
@@ -250,7 +250,7 @@ function PricingSection() {
       desc: t("pricingProDesc"),
       features: [
         t("pricingUnlimited") + " " + t("conversations"),
-        "Claude Opus + GPT-4o",
+        "BELKA CODER Pro",
         t("featureMulti"),
         t("featureMemory"),
         "GitHub " + t("pricingIntegration"),
@@ -270,7 +270,7 @@ function PricingSection() {
       desc: t("pricingEnterpriseDesc"),
       features: [
         t("pricingUnlimited") + " " + t("pricingEverything"),
-        t("pricingAllModels"),
+        "BELKA CODER Enterprise",
         t("pricingCustomAgents"),
         "API " + t("pricingAccess"),
         t("pricingDedicatedSupport"),

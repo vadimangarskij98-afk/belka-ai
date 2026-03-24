@@ -17,6 +17,7 @@ const AdminAgents = lazy(() => import("./pages/admin/Agents"));
 const AdminUsers = lazy(() => import("./pages/admin/Users"));
 const AdminSubscriptions = lazy(() => import("./pages/admin/Subscriptions"));
 const AdminVoiceAssistant = lazy(() => import("./pages/admin/VoiceAssistant"));
+const AdminReferrals = lazy(() => import("./pages/admin/Referrals"));
 const SharedChat = lazy(() => import("./pages/shared/SharedChat"));
 
 initTheme();
@@ -64,6 +65,7 @@ function Router() {
         <Route path="/admin/agents">{() => <AdminGuard component={AdminAgents} />}</Route>
         <Route path="/admin/users">{() => <AdminGuard component={AdminUsers} />}</Route>
         <Route path="/admin/subscriptions">{() => <AdminGuard component={AdminSubscriptions} />}</Route>
+        <Route path="/admin/referrals">{() => <AdminGuard component={AdminReferrals} />}</Route>
         <Route path="/admin/voice">{() => <AdminGuard component={AdminVoiceAssistant} />}</Route>
 
         <Route component={NotFound} />

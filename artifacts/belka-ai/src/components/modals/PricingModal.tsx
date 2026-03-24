@@ -6,30 +6,32 @@ const planMeta: Record<string, { icon: typeof Sparkles; color: string; popular?:
   free: {
     icon: Sparkles,
     color: "text-muted-foreground",
-    features: ["10K requests", "1 agent", "Community support"],
-    featuresRu: ["10K запросов", "1 агент", "Поддержка сообщества"],
+    features: ["10K requests", "BELKA CODER", "Community support"],
+    featuresRu: ["10K запросов", "BELKA CODER", "Поддержка сообщества"],
   },
   pro: {
     icon: Zap,
     color: "text-primary",
     popular: true,
-    features: ["500K requests", "5 agents", "Priority support", "MCP access"],
-    featuresRu: ["500K запросов", "5 агентов", "Приоритетная поддержка", "Доступ к MCP"],
+    features: ["500K requests", "BELKA CODER Pro", "Priority support", "MCP access"],
+    featuresRu: ["500K запросов", "BELKA CODER Pro", "Приоритетная поддержка", "Доступ к MCP"],
   },
   enterprise: {
     icon: Building2,
     color: "text-secondary",
-    features: ["Unlimited requests", "All agents", "Dedicated support", "Custom models"],
-    featuresRu: ["Безлимитные запросы", "Все агенты", "Выделенная поддержка", "Кастомные модели"],
+    features: ["Unlimited requests", "BELKA CODER Enterprise", "Dedicated support", "API access"],
+    featuresRu: ["Безлимитные запросы", "BELKA CODER Enterprise", "Выделенная поддержка", "API доступ"],
   },
 };
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 const API = `${BASE}/api`.replace(/\/\/+/g, "/");
 
-function getAuthHeaders() {
+function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("belka-token");
-  return token ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  return headers;
 }
 
 export function PricingModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -165,7 +167,7 @@ export function PricingModal({ open, onClose }: { open: boolean; onClose: () => 
             <button onClick={() => { setSelectedPlan(null); setPromoResult(null); setPromoCode(""); setError(null); }} className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
               <ArrowLeft size={16} />
             </button>
-            <h2 className="text-sm font-semibold text-foreground">{isRu ? "Оплата" : "Payment"} — {t(selectedPlan)} {price}/{isRu ? "мес" : "mo"}</h2>
+            <h2 className="text-sm font-semibold text-foreground">{isRu ? "Оплата" : "Payment"} — {selectedPlan || ""} {price}/{isRu ? "мес" : "mo"}</h2>
             <button onClick={onClose} className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
               <X size={16} />
             </button>

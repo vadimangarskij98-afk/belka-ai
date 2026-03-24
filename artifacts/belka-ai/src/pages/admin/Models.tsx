@@ -36,7 +36,7 @@ export default function AdminModels() {
     }
   };
 
-  const models = data?.models || [
+  const models: Array<{ id: string; name: string; provider: string; modelId: string; isActive: boolean }> = data?.models || [
     { id: "1", name: "Claude 3.5 Sonnet", provider: "anthropic", modelId: "claude-3-5-sonnet-20240620", isActive: true },
     { id: "2", name: "GPT-4o", provider: "openai", modelId: "gpt-4o", isActive: true },
     { id: "3", name: "Gemini 1.5 Pro", provider: "google", modelId: "gemini-1.5-pro", isActive: true },
