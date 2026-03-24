@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { TerminalSquare, X, Maximize2, Minimize2, Loader2 } from "lucide-react";
+import { TerminalSquare, X, Maximize2, Minimize2, Loader2, GripHorizontal } from "lucide-react";
 
 interface TerminalLine {
   type: "input" | "output" | "error" | "system";
@@ -21,23 +21,24 @@ export default function TerminalPanel({ isOpen, onClose, apiBase = "/api" }: Ter
   const [input, setInput] = useState("");
   const [isExecuting, setIsExecuting] = useState(false);
   const [cwd, setCwd] = useState("~/belka-workspace");
-  const [isMaximized, setIsMaximized] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIdx, setHistoryIdx] = useState(-1);
+  const [pos, setPos] = useState({ x: 150, y: 120 });
+  const [size, setSize] = useState({ w: 650, h: 400 });
+  const [dragging, setDragging] = useState(false);
+  const [resizing, setResizing] = useState(false);
+  const dragOffset = useRef({ x: 0, y: 0 });
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [lines]);
 
   useEffect(() => {
-    if (isOpen && inputRef.current) {
-      inputRef.current.focus();
-    }
+    if (isOpen && inputRef.current) setTimeout(() => inputRef.current?.focus(), 100);
   }, [isOpen]);
 
   useEffect(() => {
@@ -54,6 +55,25 @@ export default function TerminalPanel({ isOpen, onClose, apiBase = "/api" }: Ter
       })
       .catch(() => {});
   }, [isOpen, sessionId, apiBase]);
+
+  useEffect(() => {
+    if (!dragging && !resizing) return;
+    const handleMove = (e: MouseEvent) => {
+      if (dragging) {
+        setPos({ x: e.clientX - dragOffset.current.x, y: e.clientY - dragOffset.current.y });
+      }
+      if (resizing) {
+        setSize(prev => ({
+          w: Math.max(400, e.clientX - pos.x),
+          h: Math.max(250, e.clientY - pos.y),
+        }));
+      }
+    };
+    const handleUp = () => { setDragging(false); setResizing(false); };
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => { window.removeEventListener("mousemove", handleMove); window.removeEventListener("mouseup", handleUp); };
+  }, [dragging, resizing, pos.x, pos.y]);
 
   const executeCommand = useCallback(async (command: string) => {
     if (!command.trim()) return;
@@ -91,9 +111,7 @@ export default function TerminalPanel({ isOpen, onClose, apiBase = "/api" }: Ter
       });
 
       const data = await res.json();
-
       if (data.cwd) setCwd(data.cwd);
-
       if (data.output) {
         setLines(prev => [...prev, { type: "output", content: data.output, timestamp: Date.now() }]);
       }
@@ -122,13 +140,8 @@ export default function TerminalPanel({ isOpen, onClose, apiBase = "/api" }: Ter
       e.preventDefault();
       if (historyIdx >= 0) {
         const newIdx = historyIdx + 1;
-        if (newIdx >= history.length) {
-          setHistoryIdx(-1);
-          setInput("");
-        } else {
-          setHistoryIdx(newIdx);
-          setInput(history[newIdx]);
-        }
+        if (newIdx >= history.length) { setHistoryIdx(-1); setInput(""); }
+        else { setHistoryIdx(newIdx); setInput(history[newIdx]); }
       }
     }
   };
@@ -145,19 +158,36 @@ export default function TerminalPanel({ isOpen, onClose, apiBase = "/api" }: Ter
     }
   };
 
+  const handleDragStart = (e: React.MouseEvent) => {
+    if (isFullscreen) return;
+    dragOffset.current = { x: e.clientX - pos.x, y: e.clientY - pos.y };
+    setDragging(true);
+  };
+
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setResizing(true);
+  };
+
+  const containerStyle = isFullscreen
+    ? { position: "fixed" as const, inset: "16px", zIndex: 100 }
+    : { position: "fixed" as const, left: pos.x, top: pos.y, width: size.w, height: size.h, zIndex: 100 };
+
   return (
-    <div className={`flex flex-col bg-[#0a0a0f] border border-white/10 rounded-lg overflow-hidden transition-all ${
-      isMaximized ? "fixed inset-4 z-50" : "h-72"
-    }`}>
-      <div className="flex items-center justify-between px-3 py-1.5 bg-white/5 border-b border-white/10">
+    <div style={containerStyle} className="flex flex-col bg-[#0a0a0f] border border-white/10 rounded-xl overflow-hidden shadow-2xl">
+      <div
+        className="flex items-center justify-between px-3 py-1.5 bg-white/5 border-b border-white/10 cursor-move select-none"
+        onMouseDown={handleDragStart}
+      >
         <div className="flex items-center gap-2">
+          <GripHorizontal className="w-3.5 h-3.5 text-white/20" />
           <TerminalSquare className="w-3.5 h-3.5 text-emerald-400" />
           <span className="text-xs text-white/60 font-medium">Terminal</span>
-          <span className="text-xs text-white/30 font-mono">{cwd}</span>
+          <span className="text-[10px] text-white/25 font-mono">{cwd}</span>
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={() => setIsMaximized(!isMaximized)} className="p-1 hover:bg-white/10 rounded transition-colors">
-            {isMaximized ? <Minimize2 className="w-3 h-3 text-white/40" /> : <Maximize2 className="w-3 h-3 text-white/40" />}
+          <button onClick={() => setIsFullscreen(!isFullscreen)} className="p-1 hover:bg-white/10 rounded transition-colors">
+            {isFullscreen ? <Minimize2 className="w-3 h-3 text-white/40" /> : <Maximize2 className="w-3 h-3 text-white/40" />}
           </button>
           <button onClick={onClose} className="p-1 hover:bg-white/10 rounded transition-colors">
             <X className="w-3 h-3 text-white/40" />
@@ -179,9 +209,7 @@ export default function TerminalPanel({ isOpen, onClose, apiBase = "/api" }: Ter
 
       <div className="flex items-center gap-2 px-3 py-2 border-t border-white/10 bg-white/[0.02]">
         <span className="text-emerald-500 font-mono text-sm">❯</span>
-        {isExecuting ? (
-          <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin" />
-        ) : null}
+        {isExecuting && <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin" />}
         <input
           ref={inputRef}
           value={input}
@@ -194,6 +222,14 @@ export default function TerminalPanel({ isOpen, onClose, apiBase = "/api" }: Ter
           autoComplete="off"
         />
       </div>
+
+      {!isFullscreen && (
+        <div
+          className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize"
+          onMouseDown={handleResizeStart}
+          style={{ background: "linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.1) 50%)" }}
+        />
+      )}
     </div>
   );
 }

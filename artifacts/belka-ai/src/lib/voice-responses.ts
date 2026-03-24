@@ -252,6 +252,10 @@ export const VOICE_RESPONSES: Record<string, string | string[]> = {
   sidebar_close: 'Закрываю боковую панель.',
   history: 'Показываю историю чатов. Здесь все твои предыдущие диалоги.',
 
+  // ===== TERMINAL & PREVIEW & DOCS =====
+  open_terminal: 'Открываю терминал! Можешь вводить любые команды.',
+  open_docs: 'Открываю документацию! Здесь вся информация о платформе.',
+
   // ===== LOGOUT =====
   logout: 'Выхожу из аккаунта. До встречи!',
 

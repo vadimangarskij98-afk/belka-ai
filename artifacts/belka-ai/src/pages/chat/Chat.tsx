@@ -17,6 +17,7 @@ import WorkspacePicker from "@/components/ui-custom/WorkspacePicker";
 import { McpModal } from "@/components/modals/McpModal";
 import { ProfileModal } from "@/components/modals/ProfileModal";
 import { SettingsModal } from "@/components/modals/SettingsModal";
+import { DocsModal } from "@/components/modals/DocsModal";
 import { PricingModal } from "@/components/modals/PricingModal";
 import { GitHubModal } from "@/components/modals/GitHubModal";
 import { useVoiceModal, useVoiceAssistant, playVoice } from "@/hooks/use-voice";
@@ -483,6 +484,7 @@ export default function ChatPage() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pricingOpen, setPricingOpen] = useState(false);
+  const [docsOpen, setDocsOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewHtml, setPreviewHtml] = useState<string>("");
   const [, navigate] = useLocation();
@@ -575,7 +577,10 @@ export default function ChatPage() {
         else if (action.modal === 'pricing') setPricingOpen(true);
         else if (action.modal === 'mcp') setMcpOpen(true);
         else if (action.modal === 'github') setGithubOpen(true);
+        else if (action.modal === 'docs') setDocsOpen(true);
         break;
+      case 'openTerminal': setTerminalOpen(true); break;
+      case 'openPreview': setPreviewStatusOpen(true); break;
       case 'clarify': playVoice('start_work'); break;
       case 'runPreview': {
         setPreviewOpen(true);
@@ -1121,11 +1126,6 @@ export default function ChatPage() {
                 </div>
               </div>
             </div>
-            {terminalOpen && (
-              <div className="mt-2">
-                <TerminalPanel isOpen={terminalOpen} onClose={() => setTerminalOpen(false)} />
-              </div>
-            )}
             <div className="text-center mt-2 text-[10px] text-muted-foreground/50 font-mono">
               {t("disclaimer")}
             </div>
@@ -1151,6 +1151,7 @@ export default function ChatPage() {
       <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} />
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <PricingModal open={pricingOpen} onClose={() => setPricingOpen(false)} />
+      <DocsModal open={docsOpen} onClose={() => setDocsOpen(false)} />
 
       {imagePreviewUrl && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" onClick={() => setImagePreviewUrl(null)}>
@@ -1187,6 +1188,8 @@ export default function ChatPage() {
         isOpen={previewStatusOpen}
         onClose={() => setPreviewStatusOpen(false)}
       />
+
+      <TerminalPanel isOpen={terminalOpen} onClose={() => setTerminalOpen(false)} />
 
       {previewOpen && (
         <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">

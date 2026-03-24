@@ -75,6 +75,19 @@ Full multi-agent AI system:
 - **mcp-client.ts** — MCPClient: Model Context Protocol integration stub
 - **error-monitor.ts** — Logger, AutoFixer, HealthMonitor
 
+## Development Tools (Frontend Components)
+
+- **PreviewStatusPopup** — Draggable/resizable floating window with live iframe preview, server start/stop, logs panel
+- **TerminalPanel** — Floating draggable terminal with real bash execution via `/api/terminal/exec`
+- **WorkspacePicker** — File browser modal with directory tree via `/api/workspace/files`
+
+## Voice Assistant
+
+- **use-voice.ts** — Main hook: Web Speech API recognition + synthesis, audio playback, interrupt handling
+- **voice-phrases.ts** — 900+ trigger phrases mapping to UI actions (openTerminal, openPreview, openModal, etc.)
+- **voice-responses.ts** — Response text dictionary for voice feedback
+- Commands: open terminal, preview, docs, profile, settings, pricing, GitHub, mode switching, dictation
+
 ## API Routes
 
 All routes prefixed with `/api`:
@@ -88,11 +101,14 @@ All routes prefixed with `/api`:
 - `/api/healthz` — health check
 - `/api/github/*` — GitHub OAuth + CRUD
 - `/api/subscriptions/*` — subscriptions
-- `/api/voice/*` — voice
+- `/api/voice/*` — voice synthesis (ElevenLabs)
 - `/api/memory/*` — agent memory
 - `/api/repositories/*` — repositories
 - `/api/search/*` — search
-- `/api/belka/chat` — POST proxy to belka-coder-api on Render
+- `/api/terminal/*` — terminal exec, sessions
+- `/api/preview/*` — preview server start/stop/status
+- `/api/workspace/*` — workspace dir, files, CRUD
+- `/api/belka/chat` — POST proxy to belka-coder-api on Railway
 - `/api/code/run` — POST execute code (auth required)
 - `/api/code/preview` — POST assemble HTML preview
 

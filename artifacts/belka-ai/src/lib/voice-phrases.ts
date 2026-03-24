@@ -1,7 +1,9 @@
 export type VoiceAction =
   | { type: 'speak' }
   | { type: 'navigate'; path: string }
-  | { type: 'openModal'; modal: 'profile' | 'settings' | 'pricing' | 'mcp' | 'github' }
+  | { type: 'openModal'; modal: 'profile' | 'settings' | 'pricing' | 'mcp' | 'github' | 'docs' }
+  | { type: 'openTerminal' }
+  | { type: 'openPreview' }
   | { type: 'setMode'; mode: 'chat' | 'code' | 'multi-agent' }
   | { type: 'newChat' }
   | { type: 'writePrompt'; text: string }
@@ -713,6 +715,25 @@ export const PHRASE_DB: PhraseMatch[] = [
     triggers: ['запусти проект', 'запусти превью', 'превью', 'preview', 'покажи превью', 'покажи результат', 'запусти результат', 'запуск проекта', 'открой превью'],
     response: 'run_preview',
     action: { type: 'runPreview' },
+  },
+  {
+    triggers: ['открой сервер', 'покажи сервер', 'сервер превью', 'preview server', 'окно превью'],
+    response: 'run_preview',
+    action: { type: 'openPreview' },
+  },
+
+  // ===== TERMINAL =====
+  {
+    triggers: ['открой терминал', 'покажи терминал', 'терминал', 'terminal', 'консоль', 'открой консоль', 'командная строка'],
+    response: 'open_terminal',
+    action: { type: 'openTerminal' },
+  },
+
+  // ===== DOCUMENTATION =====
+  {
+    triggers: ['открой документацию', 'покажи документацию', 'документация', 'документы', 'помощь', 'инструкция', 'docs', 'справка'],
+    response: 'open_docs',
+    action: { type: 'openModal', modal: 'docs' },
   },
 
   // ===== LOGOUT =====
