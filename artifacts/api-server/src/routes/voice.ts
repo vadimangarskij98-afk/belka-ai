@@ -1,10 +1,33 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 
 const router: IRouter = Router();
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || "";
-
 const FEMALE_RUSSIAN_VOICE = "EXAVITQu4vr4xnSDxMaL";
+
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT = 30;
+const RATE_WINDOW = 60_000;
+
+function voiceRateLimit(req: Request, res: Response, next: NextFunction) {
+  const ip = req.ip || "unknown";
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_WINDOW });
+    next();
+    return;
+  }
+
+  if (entry.count >= RATE_LIMIT) {
+    res.status(429).json({ error: "Too many requests" });
+    return;
+  }
+
+  entry.count++;
+  next();
+}
 
 router.get("/voices", async (req, res) => {
   try {
@@ -33,11 +56,16 @@ router.get("/voices", async (req, res) => {
   }
 });
 
-router.post("/synthesize", async (req, res) => {
+router.post("/synthesize", voiceRateLimit, async (req, res) => {
   try {
     const { text, voiceId, speed } = req.body;
     if (!text) {
       res.status(400).json({ error: "Text is required" });
+      return;
+    }
+
+    if (typeof text !== "string" || text.length > 1000) {
+      res.status(400).json({ error: "Text must be a string under 1000 characters" });
       return;
     }
 
