@@ -124,6 +124,8 @@ router.get("/stats", async (req: Request, res: Response) => {
     const referrals = await db.select().from(referralsTable)
       .where(eq(referralsTable.referrerId, userId));
 
+    const user = await db.select({ bonusRequests: usersTable.bonusRequests }).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+
     const referredUsers = await Promise.all(
       referrals.map(async (r) => {
         const u = await db.select({ username: usersTable.username, createdAt: usersTable.createdAt })
@@ -136,7 +138,11 @@ router.get("/stats", async (req: Request, res: Response) => {
       })
     );
 
-    res.json({ referrals: referredUsers });
+    res.json({
+      referrals: referredUsers,
+      totalReferred: referrals.length,
+      bonusRequests: user[0]?.bonusRequests || 0,
+    });
   } catch (err) {
     req.log.error({ err }, "Referral stats error");
     res.status(500).json({ error: "Internal server error" });

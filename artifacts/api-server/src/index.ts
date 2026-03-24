@@ -1,6 +1,11 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 
+if (process.env.NODE_ENV === "production" && !process.env.JWT_SECRET) {
+  logger.error("JWT_SECRET environment variable is required in production");
+  process.exit(1);
+}
+
 const rawPort = process.env["PORT"];
 
 if (!rawPort) {
