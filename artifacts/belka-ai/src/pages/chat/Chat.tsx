@@ -882,16 +882,6 @@ export default function ChatPage() {
             </span>
           </div>
           <div className="flex items-center gap-1.5 flex-shrink-0">
-            <button onClick={handleOpenLocalFolder} title="Открыть локальную папку"
-              className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50">
-              <FolderOpen size={14} />
-              <span className="hidden sm:inline">Папка</span>
-            </button>
-            <button onClick={() => setGithubOpen(true)} title="GitHub"
-              className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg transition-colors border ${githubRepo ? 'text-green-400 border-green-400/30 bg-green-400/10' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50 border-transparent hover:border-border/50'}`}>
-              <Github size={14} />
-              <span className="hidden sm:inline">{githubRepo ? githubRepo.fullName.split('/')[1] : 'GitHub'}</span>
-            </button>
             {filesPanelOpen ? (
               <button onClick={() => setFilesPanelOpen(false)} title="Закрыть файловую панель"
                 className="flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg text-primary bg-primary/10 border border-primary/20 transition-colors">
