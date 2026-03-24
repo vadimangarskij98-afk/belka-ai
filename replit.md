@@ -1,96 +1,145 @@
-# Workspace
+# BELKA AI Workspace
 
 ## Overview
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+BELKA AI — платформа для работы с AI-агентами и чатами. pnpm workspace монорепозиторий на TypeScript.
 
 ## Stack
 
 - **Monorepo tool**: pnpm workspaces
 - **Node.js version**: 24
 - **Package manager**: pnpm
-- **TypeScript version**: 5.9
+- **Frontend**: React + Vite + Tailwind CSS + shadcn/ui
 - **API framework**: Express 5
 - **Database**: PostgreSQL + Drizzle ORM
+- **AI**: OpenRouter API (primary: Google Gemini 2.5 Flash, fallback models available)
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
+- **Auth**: JWT + bcrypt
 
 ## Structure
 
 ```text
-artifacts-monorepo/
+workspace/
 ├── artifacts/              # Deployable applications
-│   └── api-server/         # Express API server
+│   ├── belka-ai/           # React frontend (port 5000, path /)
+│   └── api-server/         # Express API server (port 8080, path /api)
 ├── lib/                    # Shared libraries
 │   ├── api-spec/           # OpenAPI spec + Orval codegen config
 │   ├── api-client-react/   # Generated React Query hooks
 │   ├── api-zod/            # Generated Zod schemas from OpenAPI
 │   └── db/                 # Drizzle ORM schema + DB connection
-├── scripts/                # Utility scripts (single workspace package)
-│   └── src/                # Individual .ts scripts, run via `pnpm --filter @workspace/scripts run <script>`
-├── pnpm-workspace.yaml     # pnpm workspace (artifacts/*, lib/*, lib/integrations/*, scripts)
-├── tsconfig.base.json      # Shared TS options (composite, bundler resolution, es2022)
+├── scripts/                # Utility scripts
+├── pnpm-workspace.yaml     # pnpm workspace config + catalog
+├── tsconfig.base.json      # Shared TS options
 ├── tsconfig.json           # Root TS project references
 └── package.json            # Root package with hoisted devDeps
 ```
 
-## TypeScript & Composite Projects
+## Database Tables
 
-Every package extends `tsconfig.base.json` which sets `composite: true`. The root `tsconfig.json` lists all packages as project references. This means:
+- `users` — пользователи
+- `conversations` — разговоры (с полями `is_archived`, `archived_at` для архивации)
+- `messages` — сообщения
+- `agents` — AI-агенты
+- `ai_models` — AI-модели
+- `memory` — память агентов
+- `subscription_plans` — планы подписки
+- `token_usage` — использование токенов
+- `repositories` — репозитории
+- `promo_codes` — промокоды
 
-- **Always typecheck from the root** — run `pnpm run typecheck` (which runs `tsc --build --emitDeclarationOnly`). This builds the full dependency graph so that cross-package imports resolve correctly. Running `tsc` inside a single package will fail if its dependencies haven't been built yet.
-- **`emitDeclarationOnly`** — we only emit `.d.ts` files during typecheck; actual JS bundling is handled by esbuild/tsx/vite...etc, not `tsc`.
-- **Project references** — when package A depends on package B, A's `tsconfig.json` must list B in its `references` array. `tsc --build` uses this to determine build order and skip up-to-date packages.
+## Workflows
 
-## Root Scripts
+- **BELKA AI Frontend** — `PORT=5000 BASE_PATH=/ pnpm --filter @workspace/belka-ai run dev`
+- **artifacts/api-server: API Server** — `PORT=8080 pnpm --filter @workspace/api-server run dev`
 
-- `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages that define it
-- `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly` using project references
+## Key Commands
 
-## Packages
+- `pnpm --filter @workspace/api-spec run codegen` — регенерировать клиент и схемы из OpenAPI
+- `pnpm --filter @workspace/db run push` — применить схему к базе данных
+- `pnpm run typecheck` — полная проверка типов
+- `pnpm --filter @workspace/api-server run seed:agents` — заполнить агентов в БД
 
-### `artifacts/api-server` (`@workspace/api-server`)
+## Agent System (artifacts/api-server/src/agent/)
 
-Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` for request and response validation and `@workspace/db` for persistence.
+Full multi-agent AI system:
 
-- Entry: `src/index.ts` — reads `PORT`, starts Express
-- App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, routes at `/api`
-- Routes: `src/routes/index.ts` mounts sub-routers; `src/routes/health.ts` exposes `GET /health` (full path: `/api/health`)
-- Depends on: `@workspace/db`, `@workspace/api-zod`
-- `pnpm --filter @workspace/api-server run dev` — run the dev server
-- `pnpm --filter @workspace/api-server run build` — production esbuild bundle (`dist/index.cjs`)
-- Build bundles an allowlist of deps (express, cors, pg, drizzle-orm, zod, etc.) and externalizes the rest
+- **core.ts** — BelkaAgent class: intent classification, memory-augmented prompts, web search integration, brainstorm orchestration
+- **system-prompts.ts** — System prompts for all 6 agents
+- **memory.ts** — MemoryManager: per-user isolated memory
+- **web-search.ts** — WebSearch: Brave/Serper/DuckDuckGo fallback chain
+- **external-agents.ts** — ExternalAgents: Claude, Gemini, OpenAI routing with streaming
+- **orchestrator.ts** — BrainStormOrchestrator: multi-agent brainstorming
+- **mcp-client.ts** — MCPClient: Model Context Protocol integration stub
+- **error-monitor.ts** — Logger, AutoFixer, HealthMonitor
 
-### `lib/db` (`@workspace/db`)
+## API Routes
 
-Database layer using Drizzle ORM with PostgreSQL. Exports a Drizzle client instance and schema models.
+All routes prefixed with `/api`:
+- `/api/auth/*` — authentication (login, register, logout, me)
+- `/api/conversations/*` — conversations (with `?archived=true` filter)
+- `/api/conversations/:id/archive` — PATCH to archive a conversation
+- `/api/conversations/:id/unarchive` — PATCH to unarchive
+- `/api/conversations/:id/messages` — messages
+- `/api/agents/*` — AI agents
+- `/api/admin/*` — administration
+- `/api/healthz` — health check
+- `/api/github/*` — GitHub OAuth + CRUD
+- `/api/subscriptions/*` — subscriptions
+- `/api/voice/*` — voice
+- `/api/memory/*` — agent memory
+- `/api/repositories/*` — repositories
+- `/api/search/*` — search
+- `/api/belka/chat` — POST proxy to belka-coder-api on Render
+- `/api/code/run` — POST execute code (auth required)
+- `/api/code/preview` — POST assemble HTML preview
 
-- `src/index.ts` — creates a `Pool` + Drizzle instance, exports schema
-- `src/schema/index.ts` — barrel re-export of all models
-- `src/schema/<modelname>.ts` — table definitions with `drizzle-zod` insert schemas (no models definitions exist right now)
-- `drizzle.config.ts` — Drizzle Kit config (requires `DATABASE_URL`, automatically provided by Replit)
-- Exports: `.` (pool, db, schema), `./schema` (schema only)
+## Environment Variables Required
 
-Production migrations are handled by Replit when publishing. In development, we just use `pnpm --filter @workspace/db run push`, and we fallback to `pnpm --filter @workspace/db run push-force`.
+- `DATABASE_URL` — PostgreSQL connection string (auto-provisioned)
+- `OPENROUTER_API_KEY` — OpenRouter API key for AI models
+- `JWT_SECRET` — JWT signing secret (defaults to "belka-ai-secret-key-2024")
+- `GITHUB_CLIENT_ID` — GitHub OAuth app client ID
+- `GITHUB_CLIENT_SECRET` — GitHub OAuth app client secret
 
-### `lib/api-spec` (`@workspace/api-spec`)
+## Code Runner
 
-Owns the OpenAPI 3.1 spec (`openapi.yaml`) and the Orval config (`orval.config.ts`). Running codegen produces output into two sibling packages:
+- **Route**: `/api/code/run` (POST, requires JWT auth)
+- **Languages**: JavaScript (.mjs), TypeScript (tsx), Python, Bash removed for security
+- **Security**: Sandboxed env (no process.env leakage), JWT auth required, 100KB code limit, 10s timeout
+- **Preview**: `/api/code/preview` (POST) — assembles HTML/CSS/JS into full page
 
-1. `lib/api-client-react/src/generated/` — React Query hooks + fetch client
-2. `lib/api-zod/src/generated/` — Zod schemas
+## UI Features
 
-Run codegen: `pnpm --filter @workspace/api-spec run codegen`
+- **Sidebar**: Collapsible "Недавние чаты" with smooth max-height animation; click-outside-to-close; collapsed shows 5 recent with "Показать ещё"; dates shown, no icons before chat titles; initialLoadDone ref prevents flickering on refetch
+- **Delete chat**: Hover shows trash icon, click opens dialog with Delete/Cancel/Archive options
+- **Archive**: Sidebar has "Архив" section; archived chats stored 30 days; unarchive available
+- **Gradient buttons**: `.belka-gradient` CSS class — animated dark blue/indigo/purple shimmer for buttons
+- **Markdown rendering**: Chat messages rendered with `react-markdown` + `remark-gfm` (bold, lists, tables, inline code, links)
+- **Streaming cursor**: Blinking cursor during AI response generation
+- **Code preview**: Play button on HTML/CSS/JS code blocks opens preview iframe; Chat.tsx has preview modal with `buildPreviewFromMessages()`
+- **Voice assistant**: Expanded phrase database; sidebar open/close, preview run, mode switch, navigation commands; fallback doesn't write to chat
+- **Admin Agents panel**: Functional edit-prompt modal, capabilities modal, active toggle; response status checked before UI update
+- **IDE features**: Real terminal (WebSocket sessions + execSync), file CRUD in workspace, git clone/commit/push, preview server management
+- **Mode switcher**: Glass-effect animated pill indicator with 4 modes: Код, Чат, Мультиагент, Изображение; ResizeObserver for pill position stability
+- **Image generation**: Mode "image" triggers Pollinations.ai; image displayed in streaming + persisted in message metadata; download button overlay on hover
+- **Streaming indicators**: Thinking timer (seconds counter per step), tool_call/tool_result blocks for file operations, thinking_start/thinking_end SSE events
+- **Workspace**: Default ~/belka-workspace; user can set custom path; agent auto-creates files from code blocks
+- **Terminal**: POST /api/terminal/exec for one-shot commands, /api/terminal/create + /api/terminal/:id/write for sessions
+- **Git**: /api/git/clone, /api/git/status, /api/git/commit, /api/git/push, /api/git/log, /api/git/init
+- **Preview server**: /api/preview/start (auto-detect npm/python), /api/preview/stop, /api/preview/status with live logs
 
-### `lib/api-zod` (`@workspace/api-zod`)
+## External Agent (belka-coder-api)
 
-Generated Zod schemas from the OpenAPI spec (e.g. `HealthCheckResponse`). Used by `api-server` for response validation.
+- **URL**: `https://belka-coder-api-production.up.railway.app`
+- **Hosted on**: Railway.app (auto-deploy from GitHub)
+- **GitHub repo**: `vadimangarskij98-afk/belka-coder-api`
+- **Flow**: Chat → API server `callBelkaCoder()` → Railway → response; if Railway fails → fallback to direct OpenRouter
+- **Endpoints**: POST `/chat`, GET `/health`
 
-### `lib/api-client-react` (`@workspace/api-client-react`)
+## GitHub
 
-Generated React Query hooks and fetch client from the OpenAPI spec (e.g. `useHealthCheck`, `healthCheck`).
-
-### `scripts` (`@workspace/scripts`)
-
-Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`. Run scripts via `pnpm --filter @workspace/scripts run <script>`. Scripts can import any workspace package (e.g., `@workspace/db`) by adding it as a dependency in `scripts/package.json`.
+- **Repos**: `vadimangarskij98-afk/belka-ai` (main), `vadimangarskij98-afk/belka-coder-api` (agent)
+- **Push method**: GitHub REST API (chunked tree creation for large repos)

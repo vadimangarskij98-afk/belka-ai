@@ -1,22 +1,36 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: BELKA AI Platform API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication
+  - name: conversations
+    description: Chat conversations
+  - name: messages
+    description: Chat messages
+  - name: agents
+    description: AI Agents management
+  - name: repositories
+    description: GitHub repositories
+  - name: admin
+    description: Admin panel operations
+  - name: voice
+    description: Voice features
+  - name: memory
+    description: Agent memory
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +38,478 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Unauthorized
+
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout
+      responses:
+        "200":
+          description: Logged out
+
+  /conversations:
+    get:
+      operationId: listConversations
+      tags: [conversations]
+      summary: List conversations
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationList"
+    post:
+      operationId: createConversation
+      tags: [conversations]
+      summary: Create a new conversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateConversationRequest"
+      responses:
+        "201":
+          description: Conversation created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversation"
+
+  /conversations/{id}:
+    get:
+      operationId: getConversation
+      tags: [conversations]
+      summary: Get a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversation"
+    delete:
+      operationId: deleteConversation
+      tags: [conversations]
+      summary: Delete a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /conversations/{id}/messages:
+    get:
+      operationId: getMessages
+      tags: [messages]
+      summary: Get messages for a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageList"
+    post:
+      operationId: sendMessage
+      tags: [messages]
+      summary: Send a message
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendMessageRequest"
+      responses:
+        "200":
+          description: AI response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentResponse"
+
+  /agents:
+    get:
+      operationId: listAgents
+      tags: [agents]
+      summary: List all agents
+      responses:
+        "200":
+          description: List of agents
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentList"
+    post:
+      operationId: createAgent
+      tags: [agents]
+      summary: Create a new agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAgentRequest"
+      responses:
+        "201":
+          description: Agent created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+
+  /agents/{id}:
+    get:
+      operationId: getAgent
+      tags: [agents]
+      summary: Get an agent
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Agent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+    put:
+      operationId: updateAgent
+      tags: [agents]
+      summary: Update an agent
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAgentRequest"
+      responses:
+        "200":
+          description: Updated agent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+    delete:
+      operationId: deleteAgent
+      tags: [agents]
+      summary: Delete an agent
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /repositories:
+    get:
+      operationId: listRepositories
+      tags: [repositories]
+      summary: List GitHub repositories
+      responses:
+        "200":
+          description: List of repositories
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepositoryList"
+    post:
+      operationId: addRepository
+      tags: [repositories]
+      summary: Add a repository
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddRepositoryRequest"
+      responses:
+        "201":
+          description: Repository added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Repository"
+
+  /repositories/{id}/files:
+    get:
+      operationId: getRepositoryFiles
+      tags: [repositories]
+      summary: Get files in repository
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Files
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileList"
+
+  /voice/synthesize:
+    post:
+      operationId: synthesizeVoice
+      tags: [voice]
+      summary: Synthesize speech with ElevenLabs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoiceSynthesizeRequest"
+      responses:
+        "200":
+          description: Audio URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceSynthesizeResponse"
+
+  /memory:
+    get:
+      operationId: getMemory
+      tags: [memory]
+      summary: Get agent memory entries
+      responses:
+        "200":
+          description: Memory entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryList"
+    post:
+      operationId: addMemory
+      tags: [memory]
+      summary: Add a memory entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddMemoryRequest"
+      responses:
+        "201":
+          description: Memory added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Memory"
+
+  /admin/stats:
+    get:
+      operationId: getAdminStats
+      tags: [admin]
+      summary: Get admin statistics
+      responses:
+        "200":
+          description: Statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminStats"
+
+  /admin/models:
+    get:
+      operationId: listModels
+      tags: [admin]
+      summary: List AI models
+      responses:
+        "200":
+          description: Models
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelList"
+    post:
+      operationId: addModel
+      tags: [admin]
+      summary: Add an AI model
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddModelRequest"
+      responses:
+        "201":
+          description: Model added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiModel"
+
+  /admin/models/{id}:
+    put:
+      operationId: updateModel
+      tags: [admin]
+      summary: Update a model
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddModelRequest"
+      responses:
+        "200":
+          description: Updated model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiModel"
+    delete:
+      operationId: deleteModel
+      tags: [admin]
+      summary: Delete a model
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /admin/users:
+    get:
+      operationId: listUsers
+      tags: [admin]
+      summary: List all users
+      responses:
+        "200":
+          description: Users
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserList"
+
+  /admin/subscriptions:
+    get:
+      operationId: listSubscriptions
+      tags: [admin]
+      summary: List subscription plans
+      responses:
+        "200":
+          description: Plans
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscriptionList"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +520,596 @@ components:
       required:
         - status
 
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        username:
+          type: string
+        role:
+          type: string
+          enum: [user, admin]
+        plan:
+          type: string
+          enum: [free, pro, enterprise]
+        createdAt:
+          type: string
+      required:
+        - id
+        - email
+        - username
+        - role
+        - plan
+        - createdAt
+
+    RegisterRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
+      required:
+        - email
+        - username
+        - password
+
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+      required:
+        - email
+        - password
+
+    AuthResponse:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        token:
+          type: string
+      required:
+        - user
+        - token
+
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        agentId:
+          type: string
+        mode:
+          type: string
+          enum: [chat, code, multi-agent]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        messageCount:
+          type: integer
+      required:
+        - id
+        - title
+        - mode
+        - createdAt
+        - updatedAt
+        - messageCount
+
+    ConversationList:
+      type: object
+      properties:
+        conversations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Conversation"
+        total:
+          type: integer
+      required:
+        - conversations
+        - total
+
+    CreateConversationRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        agentId:
+          type: string
+        mode:
+          type: string
+          enum: [chat, code, multi-agent]
+        repositoryId:
+          type: string
+      required:
+        - title
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+        conversationId:
+          type: string
+        role:
+          type: string
+          enum: [user, assistant, system, agent]
+        content:
+          type: string
+        agentName:
+          type: string
+        agentAvatar:
+          type: string
+        codeBlocks:
+          type: array
+          items:
+            $ref: "#/components/schemas/CodeBlock"
+        createdAt:
+          type: string
+        metadata:
+          type: object
+      required:
+        - id
+        - conversationId
+        - role
+        - content
+        - createdAt
+
+    CodeBlock:
+      type: object
+      properties:
+        language:
+          type: string
+        code:
+          type: string
+        filename:
+          type: string
+      required:
+        - language
+        - code
+
+    MessageList:
+      type: object
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/Message"
+      required:
+        - messages
+
+    SendMessageRequest:
+      type: object
+      properties:
+        content:
+          type: string
+        mode:
+          type: string
+          enum: [chat, code, multi-agent, search]
+        attachments:
+          type: array
+          items:
+            type: string
+        useMultiAgent:
+          type: boolean
+      required:
+        - content
+
+    AgentResponse:
+      type: object
+      properties:
+        message:
+          $ref: "#/components/schemas/Message"
+        agentMessages:
+          type: array
+          items:
+            $ref: "#/components/schemas/Message"
+        tokensUsed:
+          type: integer
+      required:
+        - message
+
+    Agent:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        avatar:
+          type: string
+        role:
+          type: string
+          enum: [coder, reviewer, researcher, designer, orchestrator]
+        modelId:
+          type: string
+        systemPrompt:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        isActive:
+          type: boolean
+        memoryEnabled:
+          type: boolean
+        createdAt:
+          type: string
+      required:
+        - id
+        - name
+        - description
+        - role
+        - isActive
+        - memoryEnabled
+        - createdAt
+
+    AgentList:
+      type: object
+      properties:
+        agents:
+          type: array
+          items:
+            $ref: "#/components/schemas/Agent"
+      required:
+        - agents
+
+    CreateAgentRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        avatar:
+          type: string
+        role:
+          type: string
+          enum: [coder, reviewer, researcher, designer, orchestrator]
+        modelId:
+          type: string
+        systemPrompt:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        memoryEnabled:
+          type: boolean
+      required:
+        - name
+        - description
+        - role
+
+    UpdateAgentRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        avatar:
+          type: string
+        modelId:
+          type: string
+        systemPrompt:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        isActive:
+          type: boolean
+        memoryEnabled:
+          type: boolean
+
+    Repository:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        fullName:
+          type: string
+        description:
+          type: string
+        url:
+          type: string
+        branch:
+          type: string
+        isLocal:
+          type: boolean
+        localPath:
+          type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - name
+        - fullName
+        - url
+        - branch
+        - isLocal
+        - createdAt
+
+    RepositoryList:
+      type: object
+      properties:
+        repositories:
+          type: array
+          items:
+            $ref: "#/components/schemas/Repository"
+      required:
+        - repositories
+
+    AddRepositoryRequest:
+      type: object
+      properties:
+        fullName:
+          type: string
+        branch:
+          type: string
+        isLocal:
+          type: boolean
+        localPath:
+          type: string
+      required:
+        - fullName
+
+    FileItem:
+      type: object
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+        type:
+          type: string
+          enum: [file, directory]
+        size:
+          type: integer
+        content:
+          type: string
+      required:
+        - name
+        - path
+        - type
+
+    FileList:
+      type: object
+      properties:
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/FileItem"
+      required:
+        - files
+
+    VoiceSynthesizeRequest:
+      type: object
+      properties:
+        text:
+          type: string
+        voiceId:
+          type: string
+        speed:
+          type: number
+      required:
+        - text
+
+    VoiceSynthesizeResponse:
+      type: object
+      properties:
+        audioUrl:
+          type: string
+        duration:
+          type: number
+      required:
+        - audioUrl
+
+    Memory:
+      type: object
+      properties:
+        id:
+          type: string
+        agentId:
+          type: string
+        key:
+          type: string
+        value:
+          type: string
+        category:
+          type: string
+          enum: [fact, preference, code, conversation, skill]
+        createdAt:
+          type: string
+      required:
+        - id
+        - key
+        - value
+        - category
+        - createdAt
+
+    MemoryList:
+      type: object
+      properties:
+        memories:
+          type: array
+          items:
+            $ref: "#/components/schemas/Memory"
+      required:
+        - memories
+
+    AddMemoryRequest:
+      type: object
+      properties:
+        agentId:
+          type: string
+        key:
+          type: string
+        value:
+          type: string
+        category:
+          type: string
+          enum: [fact, preference, code, conversation, skill]
+      required:
+        - key
+        - value
+        - category
+
+    AdminStats:
+      type: object
+      properties:
+        totalUsers:
+          type: integer
+        totalConversations:
+          type: integer
+        totalMessages:
+          type: integer
+        activeAgents:
+          type: integer
+        tokensUsedToday:
+          type: integer
+        apiCallsToday:
+          type: integer
+      required:
+        - totalUsers
+        - totalConversations
+        - totalMessages
+        - activeAgents
+        - tokensUsedToday
+        - apiCallsToday
+
+    AiModel:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        provider:
+          type: string
+          enum: [anthropic, openai, google, custom]
+        modelId:
+          type: string
+        apiKey:
+          type: string
+        isActive:
+          type: boolean
+        capabilities:
+          type: array
+          items:
+            type: string
+        contextWindow:
+          type: integer
+        costPerToken:
+          type: number
+        createdAt:
+          type: string
+      required:
+        - id
+        - name
+        - provider
+        - modelId
+        - isActive
+        - createdAt
+
+    ModelList:
+      type: object
+      properties:
+        models:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiModel"
+      required:
+        - models
+
+    AddModelRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        provider:
+          type: string
+          enum: [anthropic, openai, google, custom]
+        modelId:
+          type: string
+        apiKey:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        contextWindow:
+          type: integer
+        costPerToken:
+          type: number
+      required:
+        - name
+        - provider
+        - modelId
+
+    UserList:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+        total:
+          type: integer
+      required:
+        - users
+        - total
+
+    SubscriptionPlan:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+        features:
+          type: array
+          items:
+            type: string
+        tokensPerMonth:
+          type: integer
+        agentsLimit:
+          type: integer
+        isActive:
+          type: boolean
+      required:
+        - id
+        - name
+        - price
+        - features
+        - tokensPerMonth
+        - agentsLimit
+        - isActive
+
+    SubscriptionList:
+      type: object
+      properties:
+        plans:
+          type: array
+          items:
+            $ref: "#/components/schemas/SubscriptionPlan"
+      required:
+        - plans
