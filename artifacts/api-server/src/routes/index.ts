@@ -2,6 +2,12 @@ import { Router, type IRouter, type Request, type Response, type NextFunction } 
 import jwt from "jsonwebtoken";
 import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+
+declare module "express" {
+  interface Request {
+    userId?: number;
+  }
+}
 import healthRouter from "./health";
 import authRouter from "./auth";
 import conversationsRouter from "./conversations";
@@ -29,7 +35,7 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
     const token = req.headers.authorization?.split(" ")[1];
     if (!token) { res.status(401).json({ error: "Unauthorized" }); return; }
     const decoded = jwt.verify(token, JWT_SECRET) as { id: number };
-    (req as any).userId = decoded.id;
+    req.userId = decoded.id;
     next();
   } catch {
     res.status(401).json({ error: "Invalid token" });
@@ -45,7 +51,7 @@ async function requireAdmin(req: Request, res: Response, next: NextFunction) {
     if (users.length === 0 || users[0].role !== "admin") {
       res.status(403).json({ error: "Forbidden: admin access required" }); return;
     }
-    (req as any).userId = decoded.id;
+    req.userId = decoded.id;
     next();
   } catch {
     res.status(401).json({ error: "Invalid token" });
