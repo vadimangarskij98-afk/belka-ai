@@ -86,12 +86,14 @@ Full multi-agent AI system:
 
 ## Voice Assistant
 
-- **use-voice.ts** — Main hook: Web Speech API recognition + ElevenLabs TTS via backend API, audio playback with caching, interrupt handling
+- **use-voice.ts** — Main hook: Web Speech API recognition + local audio file playback (233 pre-recorded files), ElevenLabs API fallback only for missing clips, browser speechSynthesis as last resort
 - **voice-phrases.ts** — 900+ trigger phrases mapping to UI actions (openTerminal, openPreview, openModal, etc.)
 - **voice-responses.ts** — Response text dictionary for voice feedback
-- **Backend**: `/api/voice/synthesize` — ElevenLabs API proxy (eleven_multilingual_v2 model, Russian female voice)
+- **Local audio files**: `public/public/audio/voice_*.mp3` — 233 pre-recorded Russian female voice clips (ElevenLabs-generated), served as static files
+- **Backend**: `/api/voice/synthesize` — ElevenLabs API proxy (eleven_multilingual_v2 model), used only when local file doesn't exist (4 keys: open_docs, open_terminal, run_preview, funny_fact base)
+- **Playback priority**: 1) Local mp3 file → 2) ElevenLabs API → 3) Browser speechSynthesis
 - Commands: open terminal, preview, docs, profile, settings, pricing, GitHub, mode switching, dictation
-- TTS: ElevenLabs primary, browser speechSynthesis fallback; response caching for performance
+- Interrupt/fallback: indexed local files (voice_interrupt_0..11, voice_fallback_0..4)
 
 ## Visual Assets
 

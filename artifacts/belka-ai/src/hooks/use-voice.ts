@@ -18,6 +18,7 @@ let isSpeaking = false;
 let lastInterruptIdx = -1;
 
 const ttsCache = new Map<string, string>();
+const failedFiles = new Set<string>();
 
 const INTERRUPT_RESPONSES = [
   'Да, слушаю тебя!',
@@ -42,37 +43,11 @@ const FALLBACK_RESPONSES = [
   'Приняла к сведению!',
 ];
 
-async function elevenLabsSpeak(text: string): Promise<boolean> {
-  try {
-    const cached = ttsCache.get(text);
-    if (cached) {
-      return playDataUrl(cached);
-    }
-
-    const res = await fetch(`${BASE}/api/voice/synthesize`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, speed: 1.05 }),
-    });
-
-    if (!res.ok) return false;
-
-    const data = await res.json();
-    if (!data.audioUrl) return false;
-
-    ttsCache.set(text, data.audioUrl);
-    if (ttsCache.size > 100) {
-      const first = ttsCache.keys().next().value;
-      if (first) ttsCache.delete(first);
-    }
-
-    return playDataUrl(data.audioUrl);
-  } catch {
-    return false;
-  }
+function getLocalAudioUrl(filename: string): string {
+  return `${BASE}/public/audio/${filename}.mp3`;
 }
 
-function playDataUrl(url: string): Promise<boolean> {
+function playAudioElement(url: string): Promise<boolean> {
   return new Promise((resolve) => {
     if (currentAudio) {
       currentAudio.pause();
@@ -92,6 +67,64 @@ function playDataUrl(url: string): Promise<boolean> {
   });
 }
 
+function playLocalFile(filename: string): Promise<boolean> {
+  if (failedFiles.has(filename)) return Promise.resolve(false);
+  const url = getLocalAudioUrl(filename);
+  return new Promise((resolve) => {
+    if (currentAudio) {
+      currentAudio.pause();
+      currentAudio.currentTime = 0;
+    }
+    const audio = new Audio(url);
+    currentAudio = audio;
+    isSpeaking = true;
+    audio.oncanplaythrough = () => audio.play().catch(() => {
+      currentAudio = null;
+      isSpeaking = false;
+      failedFiles.add(filename);
+      resolve(false);
+    });
+    audio.onended = () => { currentAudio = null; isSpeaking = false; resolve(true); };
+    audio.onerror = () => {
+      currentAudio = null;
+      isSpeaking = false;
+      failedFiles.add(filename);
+      resolve(false);
+    };
+    audio.load();
+  });
+}
+
+async function elevenLabsSpeak(text: string): Promise<boolean> {
+  try {
+    const cached = ttsCache.get(text);
+    if (cached) {
+      return playAudioElement(cached);
+    }
+
+    const res = await fetch(`${BASE}/api/voice/synthesize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, speed: 1.05 }),
+    });
+
+    if (!res.ok) return false;
+
+    const data = await res.json();
+    if (!data.audioUrl) return false;
+
+    ttsCache.set(text, data.audioUrl);
+    if (ttsCache.size > 50) {
+      const first = ttsCache.keys().next().value;
+      if (first) ttsCache.delete(first);
+    }
+
+    return playAudioElement(data.audioUrl);
+  } catch {
+    return false;
+  }
+}
+
 function browserSpeak(text: string): void {
   if ('speechSynthesis' in window) {
     window.speechSynthesis.cancel();
@@ -104,11 +137,6 @@ function browserSpeak(text: string): void {
   }
 }
 
-async function speak(text: string): Promise<void> {
-  const ok = await elevenLabsSpeak(text);
-  if (!ok) browserSpeak(text);
-}
-
 function getResponseText(clip: string): string {
   const value = VOICE_RESPONSES[clip];
   if (Array.isArray(value)) {
@@ -118,8 +146,28 @@ function getResponseText(clip: string): string {
 }
 
 export async function playVoice(clip: string): Promise<void> {
-  const text = getResponseText(clip);
-  if (text) await speak(text);
+  const value = VOICE_RESPONSES[clip];
+
+  if (Array.isArray(value)) {
+    const idx = Math.floor(Math.random() * value.length);
+    const okIndexed = await playLocalFile(`voice_${clip}_${idx}`);
+    if (okIndexed) return;
+    const okSingle = await playLocalFile(`voice_${clip}`);
+    if (okSingle) return;
+    const okApi = await elevenLabsSpeak(value[idx]);
+    if (okApi) return;
+    browserSpeak(value[idx]);
+    return;
+  }
+
+  const ok = await playLocalFile(`voice_${clip}`);
+  if (ok) return;
+
+  if (typeof value === 'string') {
+    const okApi = await elevenLabsSpeak(value);
+    if (okApi) return;
+    browserSpeak(value);
+  }
 }
 
 export function isCurrentlySpeaking(): boolean {
@@ -148,12 +196,20 @@ async function playInterrupt(): Promise<void> {
     idx = (idx + 1) % INTERRUPT_RESPONSES.length;
   }
   lastInterruptIdx = idx;
-  await speak(INTERRUPT_RESPONSES[idx]);
+  const ok = await playLocalFile(`voice_interrupt_${idx}`);
+  if (ok) return;
+  const okApi = await elevenLabsSpeak(INTERRUPT_RESPONSES[idx]);
+  if (okApi) return;
+  browserSpeak(INTERRUPT_RESPONSES[idx]);
 }
 
 export async function speakText(text: string): Promise<void> {
   const idx = Math.floor(Math.random() * FALLBACK_RESPONSES.length);
-  await speak(FALLBACK_RESPONSES[idx]);
+  const ok = await playLocalFile(`voice_fallback_${idx}`);
+  if (ok) return;
+  const okApi = await elevenLabsSpeak(FALLBACK_RESPONSES[idx]);
+  if (okApi) return;
+  browserSpeak(FALLBACK_RESPONSES[idx]);
 }
 
 export async function pregenerateVoices(): Promise<void> {}
