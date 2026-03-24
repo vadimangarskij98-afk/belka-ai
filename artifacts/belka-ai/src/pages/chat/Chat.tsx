@@ -709,9 +709,13 @@ export default function ChatPage() {
       const BASE = import.meta.env.BASE_URL || "/";
       const API = `${BASE}api`.replace(/\/\/+/g, "/");
 
+      const authToken = localStorage.getItem("belka-token") || "";
       const response = await fetch(`${API}/conversations/${activeId}/messages`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
         body: JSON.stringify({ content, mode, useMultiAgent: mode === "multi-agent" }),
       });
 
