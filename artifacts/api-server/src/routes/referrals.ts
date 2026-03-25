@@ -3,9 +3,9 @@ import jwt from "jsonwebtoken";
 import { db, usersTable, referralsTable, referralSettingsTable } from "@workspace/db";
 import { eq, and, count } from "drizzle-orm";
 import crypto from "crypto";
+import { JWT_SECRET } from "../config";
 
 const router: IRouter = Router();
-const JWT_SECRET = process.env.JWT_SECRET || "belka-ai-secret-key-2024";
 
 function getUserId(req: Request): number | null {
   try {

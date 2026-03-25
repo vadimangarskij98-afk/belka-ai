@@ -2,10 +2,9 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import jwt from "jsonwebtoken";
 import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { JWT_SECRET } from "../config";
 
 const router: IRouter = Router();
-
-const JWT_SECRET = process.env.JWT_SECRET || "belka-ai-secret-key-2024";
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID || "";
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET || "";
 
@@ -71,7 +70,7 @@ router.post("/auth/callback", async (req, res) => {
         .where(eq(usersTable.id, userId));
     }
 
-    res.json({ success: true, username: ghUser.login, avatar: ghUser.avatar_url, token: ghToken });
+    res.json({ success: true, username: ghUser.login, avatar: ghUser.avatar_url });
   } catch (err) {
     req.log.error({ err }, "GitHub OAuth callback error");
     res.status(500).json({ error: "OAuth exchange failed" });
@@ -289,7 +288,7 @@ router.delete("/repos/:owner/:repo/file", async (req, res) => {
   }
 });
 
-router.post("/repos/:owner/:repo/create", async (req, res) => {
+async function createRepository(req: Request, res: Response) {
   const userId = getUserId(req);
   const token = await getGhToken(userId);
   if (!token) { res.status(401).json({ error: "GitHub not connected" }); return; }
@@ -326,7 +325,10 @@ router.post("/repos/:owner/:repo/create", async (req, res) => {
     req.log.error({ err }, "Create repo error");
     res.status(500).json({ error: "Internal server error" });
   }
-});
+}
+
+router.post("/repos/create", createRepository);
+router.post("/repos/:owner/:repo/create", createRepository);
 
 router.post("/repos/:owner/:repo/push", async (req, res) => {
   const userId = getUserId(req);

@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { execSync } from "child_process";
+import { spawnSync } from "child_process";
 import os from "os";
 import { getWorkspace } from "../lib/workspace-state";
 
@@ -26,6 +26,41 @@ interface TerminalSession {
 
 const sessions = new Map<string, TerminalSession>();
 
+function getRouteParam(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? value[0] ?? "" : (value ?? "");
+}
+
+function runShellCommand(command: string, cwd: string) {
+  const env = {
+    ...process.env,
+    HOME: os.homedir(),
+    USERPROFILE: os.homedir(),
+    TERM: "xterm-256color",
+  };
+
+  if (process.platform === "win32") {
+    return spawnSync(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command],
+      {
+        cwd,
+        timeout: 30000,
+        maxBuffer: 1024 * 1024,
+        encoding: "utf-8",
+        env,
+      },
+    );
+  }
+
+  return spawnSync("/bin/bash", ["-lc", command], {
+    cwd,
+    timeout: 30000,
+    maxBuffer: 1024 * 1024,
+    encoding: "utf-8",
+    env,
+  });
+}
+
 router.post("/terminal/exec", (req: Request, res: Response) => {
   const { command, cwd } = req.body;
   if (!command) { res.status(400).json({ error: "command required" }); return; }
@@ -34,15 +69,13 @@ router.post("/terminal/exec", (req: Request, res: Response) => {
   const workDir = cwd || getWorkspace();
 
   try {
-    const result = execSync(command, {
-      cwd: workDir,
-      timeout: 30000,
-      maxBuffer: 1024 * 1024,
-      encoding: "utf-8",
-      env: { ...process.env, HOME: os.homedir(), TERM: "xterm-256color" },
-      shell: "/bin/bash",
-    });
-    res.json({ output: result, exitCode: 0, cwd: workDir });
+    const result = runShellCommand(command, workDir);
+
+    if (result.error) {
+      throw result.error;
+    }
+
+    res.json({ output: result.stdout || "", exitCode: result.status ?? 0, cwd: workDir });
   } catch (err: any) {
     res.json({
       output: err.stdout || "",
@@ -64,7 +97,8 @@ router.post("/terminal/create", (req: Request, res: Response) => {
 });
 
 router.post("/terminal/:id/write", (req: Request, res: Response) => {
-  const session = sessions.get(req.params.id);
+  const sessionId = getRouteParam(req.params.id);
+  const session = sessions.get(sessionId);
   if (!session) { res.status(404).json({ error: "session not found" }); return; }
 
   const { command } = req.body;
@@ -72,14 +106,11 @@ router.post("/terminal/:id/write", (req: Request, res: Response) => {
   if (!isCommandSafe(command)) { res.status(403).json({ error: "command blocked for safety" }); return; }
 
   try {
-    const result = execSync(command, {
-      cwd: session.cwd,
-      timeout: 30000,
-      maxBuffer: 1024 * 1024,
-      encoding: "utf-8",
-      env: { ...process.env, HOME: os.homedir(), TERM: "xterm-256color" },
-      shell: "/bin/bash",
-    });
+    const result = runShellCommand(command, session.cwd);
+
+    if (result.error) {
+      throw result.error;
+    }
 
     if (command.startsWith("cd ")) {
       const newDir = command.slice(3).trim();
@@ -90,8 +121,8 @@ router.post("/terminal/:id/write", (req: Request, res: Response) => {
       } catch {}
     }
 
-    const output = result || "";
-    res.json({ output, exitCode: 0, cwd: session.cwd });
+    const output = result.stdout || "";
+    res.json({ output, exitCode: result.status ?? 0, cwd: session.cwd });
   } catch (err: any) {
     const output = (err.stdout || "") + (err.stderr || err.message || "");
     res.json({ output, error: err.stderr || err.message, exitCode: err.status || 1, cwd: session.cwd });
@@ -99,7 +130,7 @@ router.post("/terminal/:id/write", (req: Request, res: Response) => {
 });
 
 router.delete("/terminal/:id", (req: Request, res: Response) => {
-  sessions.delete(req.params.id);
+  sessions.delete(getRouteParam(req.params.id));
   res.json({ success: true });
 });
 

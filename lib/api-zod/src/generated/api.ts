@@ -69,7 +69,7 @@ export const ListConversationsResponse = zod.object({
       id: zod.string(),
       title: zod.string(),
       agentId: zod.string().optional(),
-      mode: zod.enum(["chat", "code", "multi-agent"]),
+      mode: zod.enum(["chat", "code", "multi-agent", "image"]),
       createdAt: zod.string(),
       updatedAt: zod.string(),
       messageCount: zod.number(),
@@ -84,7 +84,7 @@ export const ListConversationsResponse = zod.object({
 export const CreateConversationBody = zod.object({
   title: zod.string(),
   agentId: zod.string().optional(),
-  mode: zod.enum(["chat", "code", "multi-agent"]).optional(),
+  mode: zod.enum(["chat", "code", "multi-agent", "image"]).optional(),
   repositoryId: zod.string().optional(),
 });
 
@@ -99,7 +99,7 @@ export const GetConversationResponse = zod.object({
   id: zod.string(),
   title: zod.string(),
   agentId: zod.string().optional(),
-  mode: zod.enum(["chat", "code", "multi-agent"]),
+  mode: zod.enum(["chat", "code", "multi-agent", "image"]),
   createdAt: zod.string(),
   updatedAt: zod.string(),
   messageCount: zod.number(),
@@ -152,7 +152,7 @@ export const SendMessageParams = zod.object({
 
 export const SendMessageBody = zod.object({
   content: zod.string(),
-  mode: zod.enum(["chat", "code", "multi-agent", "search"]).optional(),
+  mode: zod.enum(["chat", "code", "multi-agent", "image", "search"]).optional(),
   attachments: zod.array(zod.string()).optional(),
   useMultiAgent: zod.boolean().optional(),
 });

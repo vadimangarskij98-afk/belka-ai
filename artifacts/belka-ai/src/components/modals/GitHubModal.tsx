@@ -166,7 +166,7 @@ export function GitHubModal({ open, onClose, onSelectRepo }: GitHubModalProps) {
     if (!newRepoName.trim()) return;
     setCreateLoading(true);
     try {
-      const res = await fetch(`${API}/github/repos/create/create`, {
+      const res = await fetch(`${API}/github/repos/create`, {
         method: "POST",
         headers: getHeaders(),
         body: JSON.stringify({ name: newRepoName.trim(), description: newRepoDesc.trim(), isPrivate: newRepoPrivate }),

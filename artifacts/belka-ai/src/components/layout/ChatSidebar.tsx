@@ -58,8 +58,15 @@ export function ChatSidebar({ collapsed, onToggle, activeConvId, isPending }: Ch
 
   const fetchConversations = async () => {
     try {
-      if (!initialLoadDone.current) setIsLoading(true);
       const headers = authHeaders();
+      if (!headers.Authorization) {
+        setConversations([]);
+        setArchivedConversations([]);
+        setIsLoading(false);
+        return;
+      }
+
+      if (!initialLoadDone.current) setIsLoading(true);
       const [activeRes, archivedRes] = await Promise.all([
         fetch(`${API}/conversations`, { headers }),
         fetch(`${API}/conversations?archived=true`, { headers }),

@@ -49,3 +49,6 @@ Thumbs.db
 .local/
 .replit
 replit.nix
+.playwright-cli/
+frontend-dev.log
+frontend-dev.err.log

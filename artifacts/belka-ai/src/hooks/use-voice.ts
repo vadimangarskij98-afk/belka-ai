@@ -1,6 +1,7 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { matchPhrase, type VoiceAction } from '@/lib/voice-phrases';
-import { VOICE_RESPONSES } from '@/lib/voice-responses';
+import { useState, useCallback, useRef, useEffect } from "react";
+import { matchPhrase, type VoiceAction } from "@/lib/voice-phrases";
+import { VOICE_RESPONSES } from "@/lib/voice-responses";
+import { getVoiceAssistantConfig } from "@/lib/voice-config";
 
 interface SpeechRecognitionEvent {
   results: {
@@ -12,39 +13,89 @@ interface SpeechRecognitionEvent {
   };
 }
 
-const BASE = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
-let currentAudio: HTMLAudioElement | null = null;
-let isSpeaking = false;
-let lastInterruptIdx = -1;
+interface VoicePlaybackState {
+  speaking: boolean;
+}
 
+interface RemoteSpeakOptions {
+  preset?: string;
+  provider?: "auto" | "pollinations" | "elevenlabs" | "browser";
+  speed?: number;
+}
+
+const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 const ttsCache = new Map<string, string>();
 const failedFiles = new Set<string>();
+const playbackSubscribers = new Set<(state: VoicePlaybackState) => void>();
 
-const INTERRUPT_RESPONSES = [
-  'Да, слушаю тебя!',
-  'Ладно-ладно, говори!',
-  'Ой, перебиваешь! Ну давай, что там?',
-  'Слушай, я тут для кого распинаюсь? Ладно, говори.',
-  'Не перебивай! Ну ладно, что хотел?',
-  'Сейчас дорасскажу... а ладно, давай, что у тебя?',
-  'Эй, я ещё не закончила! Ну ок, слушаю.',
-  'О, нетерпеливый! Хорошо, давай.',
-  'Тебе повезло что я терпеливая. Слушаю!',
-  'Ну вот, опять перебивают... Ладно, что?',
-  'Ладно, ладно, молчу. Твоя очередь!',
-  'Стоп, стоп, я поняла. Говори.',
-];
+let currentAudio: HTMLAudioElement | null = null;
+let isSpeaking = false;
+
+const CLEAN_CLIP_TEXT: Record<string, string> = {
+  mic_on: "Голосовой режим включён. Слушаю вас.",
+  mic_off: "Голосовой режим выключен.",
+  listen: "Слушаю внимательно.",
+  dictate: "Режим диктовки включён. Говорите, я записываю.",
+  dictate_done: "Диктовка завершена.",
+  send_message: "Отправляю задачу.",
+  typing: "Записываю команду.",
+  analyzing: "Анализирую запрос.",
+  researching: "Проверяю информацию.",
+  writing: "Формирую ответ.",
+  checking: "Проверяю результат.",
+  start_work: "Принято. Начинаю работу.",
+  save: "Сохранено.",
+  open_terminal: "Открываю терминал.",
+  open_files: "Открываю файловую панель.",
+  close_files: "Закрываю файловую панель.",
+  run_preview: "Запускаю предпросмотр.",
+  settings_saved: "Настройки сохранены.",
+  sidebar_open: "Открываю боковую панель.",
+  sidebar_close: "Закрываю боковую панель.",
+};
 
 const FALLBACK_RESPONSES = [
-  'Записала вашу команду. Обрабатываю.',
-  'Принято! Работаю над этим.',
-  'Поняла, выполняю.',
-  'Хорошо, сейчас сделаю!',
-  'Приняла к сведению!',
+  "Принято. Отправляю задачу агенту.",
+  "Команда принята, выполняю.",
+  "Хорошо, начинаю обработку.",
+  "Понял, передаю это в работу.",
 ];
+
+function emitPlaybackState(state: VoicePlaybackState) {
+  playbackSubscribers.forEach((listener) => listener(state));
+}
+
+function setSpeaking(nextValue: boolean) {
+  isSpeaking = nextValue;
+  emitPlaybackState({ speaking: nextValue });
+}
+
+function getAuthHeaders(): Record<string, string> {
+  const token = typeof window !== "undefined" ? window.localStorage.getItem("belka-token") : "";
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 function getLocalAudioUrl(filename: string): string {
   return `${BASE}/public/audio/${filename}.mp3`;
+}
+
+function looksBroken(text: string): boolean {
+  return /Р.|С./.test(text);
+}
+
+function getResponseText(clip: string): string {
+  if (CLEAN_CLIP_TEXT[clip]) return CLEAN_CLIP_TEXT[clip];
+
+  const value = VOICE_RESPONSES[clip];
+  const pick = Array.isArray(value)
+    ? value[Math.floor(Math.random() * value.length)]
+    : (typeof value === "string" ? value : "");
+
+  if (!pick || looksBroken(pick)) {
+    return "Принято.";
+  }
+
+  return pick;
 }
 
 function playAudioElement(url: string): Promise<boolean> {
@@ -53,70 +104,81 @@ function playAudioElement(url: string): Promise<boolean> {
       currentAudio.pause();
       currentAudio.currentTime = 0;
     }
+
     const audio = new Audio(url);
     currentAudio = audio;
-    isSpeaking = true;
-    audio.oncanplaythrough = () => audio.play().catch(() => {
+    setSpeaking(true);
+
+    audio.oncanplaythrough = () => {
+      audio.play().catch(() => {
+        currentAudio = null;
+        setSpeaking(false);
+        resolve(false);
+      });
+    };
+
+    audio.onended = () => {
       currentAudio = null;
-      isSpeaking = false;
+      setSpeaking(false);
+      resolve(true);
+    };
+
+    audio.onerror = () => {
+      currentAudio = null;
+      setSpeaking(false);
       resolve(false);
-    });
-    audio.onended = () => { currentAudio = null; isSpeaking = false; resolve(true); };
-    audio.onerror = () => { currentAudio = null; isSpeaking = false; resolve(false); };
+    };
+
     audio.load();
   });
 }
 
 function playLocalFile(filename: string): Promise<boolean> {
   if (failedFiles.has(filename)) return Promise.resolve(false);
-  const url = getLocalAudioUrl(filename);
-  return new Promise((resolve) => {
-    if (currentAudio) {
-      currentAudio.pause();
-      currentAudio.currentTime = 0;
-    }
-    const audio = new Audio(url);
-    currentAudio = audio;
-    isSpeaking = true;
-    audio.oncanplaythrough = () => audio.play().catch(() => {
-      currentAudio = null;
-      isSpeaking = false;
-      failedFiles.add(filename);
-      resolve(false);
-    });
-    audio.onended = () => { currentAudio = null; isSpeaking = false; resolve(true); };
-    audio.onerror = () => {
-      currentAudio = null;
-      isSpeaking = false;
-      failedFiles.add(filename);
-      resolve(false);
-    };
-    audio.load();
+  return playAudioElement(getLocalAudioUrl(filename)).then((ok) => {
+    if (!ok) failedFiles.add(filename);
+    return ok;
   });
 }
 
-async function elevenLabsSpeak(text: string): Promise<boolean> {
+async function remoteSpeak(text: string, options: RemoteSpeakOptions = {}): Promise<boolean> {
+  if (!text.trim()) return false;
+
   try {
-    const cached = ttsCache.get(text);
+    const config = getVoiceAssistantConfig();
+    const provider = options.provider ?? config.provider;
+    const preset = options.preset ?? config.preset;
+    const speed = options.speed;
+    const cacheKey = `${provider}|${preset}|${speed ?? "default"}|${text}`;
+    const cached = ttsCache.get(cacheKey);
+
     if (cached) {
       return playAudioElement(cached);
     }
 
-    const res = await fetch(`${BASE}/api/voice/synthesize`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, speed: 1.05 }),
+    const response = await fetch(`${BASE}/api/voice/synthesize`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({
+        text,
+        provider,
+        preset,
+        speed,
+      }),
     });
 
-    if (!res.ok) return false;
+    if (!response.ok) return false;
 
-    const data = await res.json();
+    const data = await response.json();
     if (!data.audioUrl) return false;
 
-    ttsCache.set(text, data.audioUrl);
-    if (ttsCache.size > 50) {
-      const first = ttsCache.keys().next().value;
-      if (first) ttsCache.delete(first);
+    ttsCache.set(cacheKey, data.audioUrl);
+    if (ttsCache.size > 80) {
+      const firstKey = ttsCache.keys().next().value;
+      if (firstKey) ttsCache.delete(firstKey);
     }
 
     return playAudioElement(data.audioUrl);
@@ -125,49 +187,72 @@ async function elevenLabsSpeak(text: string): Promise<boolean> {
   }
 }
 
-function browserSpeak(text: string): void {
-  if ('speechSynthesis' in window) {
+function browserSpeak(text: string): Promise<boolean> {
+  if (!("speechSynthesis" in window)) return Promise.resolve(false);
+
+  return new Promise((resolve) => {
     window.speechSynthesis.cancel();
     const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = 'ru-RU';
-    isSpeaking = true;
-    utter.onend = () => { isSpeaking = false; };
-    utter.onerror = () => { isSpeaking = false; };
+    utter.lang = "ru-RU";
+    utter.rate = 1;
+    setSpeaking(true);
+    utter.onend = () => {
+      setSpeaking(false);
+      resolve(true);
+    };
+    utter.onerror = () => {
+      setSpeaking(false);
+      resolve(false);
+    };
     window.speechSynthesis.speak(utter);
-  }
+  });
 }
 
-function getResponseText(clip: string): string {
-  const value = VOICE_RESPONSES[clip];
-  if (Array.isArray(value)) {
-    return value[Math.floor(Math.random() * value.length)];
-  }
-  return typeof value === 'string' ? value : '';
+async function speakWithFallback(text: string, options?: RemoteSpeakOptions): Promise<void> {
+  const config = getVoiceAssistantConfig();
+  if (!config.voiceEnabled) return;
+
+  const remoteOk = await remoteSpeak(text, options);
+  if (remoteOk) return;
+  await browserSpeak(text);
 }
 
 export async function playVoice(clip: string): Promise<void> {
+  const config = getVoiceAssistantConfig();
+  if (!config.voiceEnabled) return;
+
   const value = VOICE_RESPONSES[clip];
 
   if (Array.isArray(value)) {
     const idx = Math.floor(Math.random() * value.length);
-    const okIndexed = await playLocalFile(`voice_${clip}_${idx}`);
-    if (okIndexed) return;
-    const okSingle = await playLocalFile(`voice_${clip}`);
-    if (okSingle) return;
-    const okApi = await elevenLabsSpeak(value[idx]);
-    if (okApi) return;
-    browserSpeak(value[idx]);
+    const indexedFile = `voice_${clip}_${idx}`;
+    const singleFile = `voice_${clip}`;
+
+    if (await playLocalFile(indexedFile)) return;
+    if (await playLocalFile(singleFile)) return;
+
+    await speakWithFallback(getResponseText(clip));
     return;
   }
 
-  const ok = await playLocalFile(`voice_${clip}`);
-  if (ok) return;
+  if (await playLocalFile(`voice_${clip}`)) return;
+  await speakWithFallback(getResponseText(clip));
+}
 
-  if (typeof value === 'string') {
-    const okApi = await elevenLabsSpeak(value);
-    if (okApi) return;
-    browserSpeak(value);
-  }
+export async function speakAssistantReply(text: string): Promise<void> {
+  const cleaned = text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/\[(.*?)\]\((.*?)\)/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) return;
+  await speakWithFallback(cleaned);
+}
+
+export async function speakText(_text: string): Promise<void> {
+  const idx = Math.floor(Math.random() * FALLBACK_RESPONSES.length);
+  await speakWithFallback(FALLBACK_RESPONSES[idx]);
 }
 
 export function isCurrentlySpeaking(): boolean {
@@ -180,36 +265,21 @@ export function interruptVoice(): void {
     currentAudio.currentTime = 0;
     currentAudio = null;
   }
-  if ('speechSynthesis' in window) {
+  if ("speechSynthesis" in window) {
     window.speechSynthesis.cancel();
   }
-  isSpeaking = false;
+  setSpeaking(false);
 }
 
 export function stopAllVoice(): void {
   interruptVoice();
 }
 
-async function playInterrupt(): Promise<void> {
-  let idx = Math.floor(Math.random() * INTERRUPT_RESPONSES.length);
-  if (idx === lastInterruptIdx && INTERRUPT_RESPONSES.length > 1) {
-    idx = (idx + 1) % INTERRUPT_RESPONSES.length;
-  }
-  lastInterruptIdx = idx;
-  const ok = await playLocalFile(`voice_interrupt_${idx}`);
-  if (ok) return;
-  const okApi = await elevenLabsSpeak(INTERRUPT_RESPONSES[idx]);
-  if (okApi) return;
-  browserSpeak(INTERRUPT_RESPONSES[idx]);
-}
-
-export async function speakText(text: string): Promise<void> {
-  const idx = Math.floor(Math.random() * FALLBACK_RESPONSES.length);
-  const ok = await playLocalFile(`voice_fallback_${idx}`);
-  if (ok) return;
-  const okApi = await elevenLabsSpeak(FALLBACK_RESPONSES[idx]);
-  if (okApi) return;
-  browserSpeak(FALLBACK_RESPONSES[idx]);
+export function subscribeVoicePlayback(listener: (state: VoicePlaybackState) => void) {
+  playbackSubscribers.add(listener);
+  return () => {
+    playbackSubscribers.delete(listener);
+  };
 }
 
 export async function pregenerateVoices(): Promise<void> {}
@@ -220,150 +290,221 @@ export type VoiceActionHandler = (action: VoiceAction) => void;
 export function useVoiceAssistant(onAction?: VoiceActionHandler) {
   const [isActive, setIsActive] = useState(false);
   const [isDictating, setIsDictating] = useState(false);
-  const [lastTranscript, setLastTranscript] = useState('');
+  const [lastTranscript, setLastTranscript] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const recognitionRef = useRef<any>(null);
   const isActiveRef = useRef(false);
   const isDictatingRef = useRef(false);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastProcessedRef = useRef('');
+  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastProcessedRef = useRef("");
   const onActionRef = useRef(onAction);
   const turnOffRef = useRef<() => void>(() => {});
+  const processTranscriptRef = useRef<(text: string) => void>(() => {});
 
   useEffect(() => { onActionRef.current = onAction; }, [onAction]);
   useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
   useEffect(() => { isDictatingRef.current = isDictating; }, [isDictating]);
 
+  const stopRecognition = useCallback(() => {
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch { /* ignore */ }
+      recognitionRef.current = null;
+    }
+  }, []);
+
+  const startRecognition = useCallback(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition || recognitionRef.current || !isActiveRef.current) return;
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "ru-RU";
+    recognition.interimResults = false;
+    recognition.continuous = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let finalText = "";
+      for (let i = 0; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          finalText = event.results[i][0].transcript;
+        }
+      }
+
+      if (finalText.trim()) {
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+        processTranscriptRef.current(finalText);
+      }
+    };
+
+    recognition.onerror = () => {
+      stopRecognition();
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+      if (isActiveRef.current) {
+        const delay = getVoiceAssistantConfig().echoGuardDelayMs;
+        restartTimerRef.current = setTimeout(() => {
+          if (isActiveRef.current && !isCurrentlySpeaking()) {
+            startRecognition();
+          }
+        }, delay);
+      }
+    };
+
+    recognition.onend = () => {
+      recognitionRef.current = null;
+      if (isActiveRef.current && !isCurrentlySpeaking()) {
+        const delay = getVoiceAssistantConfig().echoGuardDelayMs;
+        if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+        restartTimerRef.current = setTimeout(() => {
+          if (isActiveRef.current && !recognitionRef.current && !isCurrentlySpeaking()) {
+            startRecognition();
+          }
+        }, delay);
+      }
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  }, [stopRecognition]);
+
   const processTranscript = useCallback(async (text: string) => {
     const trimmed = text.trim();
+    const config = getVoiceAssistantConfig();
+
     if (!trimmed || trimmed === lastProcessedRef.current) return;
     lastProcessedRef.current = trimmed;
     setIsProcessing(true);
     setLastTranscript(trimmed);
 
-    if (isSpeaking) {
-      interruptVoice();
-      await playInterrupt();
+    if (isCurrentlySpeaking()) {
       setIsProcessing(false);
       return;
     }
 
     if (isDictatingRef.current) {
       const lower = trimmed.toLowerCase();
-      if (lower.includes('стоп диктовк') || lower.includes('хватит диктовать') || lower.includes('закончи диктовку') || lower === 'стоп') {
+
+      if (lower.includes("стоп диктовку") || lower.includes("хватит диктовать") || lower.includes("закончи диктовку") || lower === "стоп") {
         setIsDictating(false);
         isDictatingRef.current = false;
-        await playVoice('dictate_done');
-      } else if (lower.includes('отправь') || lower.includes('отправить') || lower.includes('сенд')) {
+        await playVoice("dictate_done");
+      } else if (lower.includes("отправь") || lower.includes("отправить") || lower.includes("send")) {
         setIsDictating(false);
         isDictatingRef.current = false;
-        await playVoice('send_message');
-        if (onActionRef.current) onActionRef.current({ type: 'sendChat' });
+        await playVoice("send_message");
+        onActionRef.current?.({ type: "sendChat" });
       } else {
-        if (onActionRef.current) onActionRef.current({ type: 'writePrompt', text: trimmed });
-        await playVoice('typing');
+        onActionRef.current?.({ type: "writePrompt", text: trimmed });
+        await playVoice("typing");
       }
+
       setIsProcessing(false);
       return;
     }
 
     const match = matchPhrase(trimmed);
+
     if (match) {
-      if (match.action?.type === 'dictateMode') {
+      if (match.action?.type === "dictateMode") {
+        if (!config.dictationEnabled) {
+          await speakWithFallback("Диктовка сейчас отключена в настройках.");
+          setIsProcessing(false);
+          return;
+        }
         setIsDictating(true);
         isDictatingRef.current = true;
       }
-      if (match.action?.type === 'micOff') {
-        await playVoice('mic_off');
-        setTimeout(() => turnOffRef.current(), 500);
+
+      if (match.action?.type === "micOff") {
+        await playVoice("mic_off");
+        setTimeout(() => turnOffRef.current(), 300);
         setIsProcessing(false);
         return;
       }
+
       await playVoice(match.response);
-      if (match.action && match.action.type !== 'dictateMode' && onActionRef.current) {
-        onActionRef.current(match.action);
+      if (match.action && match.action.type !== "dictateMode") {
+        onActionRef.current?.(match.action);
       }
-    } else {
+    } else if (config.routeUnknownCommandsToAgent && onActionRef.current) {
       await speakText(trimmed);
+      onActionRef.current({ type: "sendToAgent", text: trimmed });
+    } else {
+      await speakWithFallback("Не до конца понял команду. Перефразируйте, пожалуйста.");
     }
 
     setIsProcessing(false);
   }, []);
 
-  const startRecognition = useCallback(() => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
-
-    if (recognitionRef.current) {
-      try { recognitionRef.current.stop(); } catch { /* ok */ }
-    }
-
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'ru-RU';
-    recognition.interimResults = false;
-    recognition.continuous = true;
-    recognition.maxAlternatives = 1;
-
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      let finalText = '';
-      for (let i = 0; i < event.results.length; i++) {
-        if (event.results[i].isFinal) {
-          finalText = event.results[i][0].transcript;
-        }
-      }
-      if (finalText.trim()) {
-        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-        processTranscript(finalText);
-      }
+  useEffect(() => {
+    processTranscriptRef.current = (text: string) => {
+      void processTranscript(text);
     };
-
-    recognition.onerror = () => {
-      if (isActiveRef.current) {
-        setTimeout(() => { if (isActiveRef.current) startRecognition(); }, 1000);
-      }
-    };
-
-    recognition.onend = () => {
-      if (isActiveRef.current) {
-        setTimeout(() => { if (isActiveRef.current) startRecognition(); }, 300);
-      }
-    };
-
-    recognitionRef.current = recognition;
-    recognition.start();
   }, [processTranscript]);
+
+  useEffect(() => {
+    return subscribeVoicePlayback(({ speaking }) => {
+      const config = getVoiceAssistantConfig();
+      if (!config.echoGuardEnabled || !isActiveRef.current) return;
+
+      if (speaking) {
+        stopRecognition();
+        if (restartTimerRef.current) {
+          clearTimeout(restartTimerRef.current);
+          restartTimerRef.current = null;
+        }
+        return;
+      }
+
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = setTimeout(() => {
+        if (isActiveRef.current && !recognitionRef.current && !isCurrentlySpeaking()) {
+          startRecognition();
+        }
+      }, config.echoGuardDelayMs);
+    });
+  }, [startRecognition, stopRecognition]);
 
   const toggle = useCallback(() => {
     if (isActive) {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch { /* ok */ }
-        recognitionRef.current = null;
-      }
+      stopRecognition();
       stopAllVoice();
       setIsActive(false);
       setIsDictating(false);
       isDictatingRef.current = false;
-      setLastTranscript('');
-      lastProcessedRef.current = '';
-      playVoice('mic_off');
-    } else {
-      setIsActive(true);
-      playVoice('mic_on').then(() => startRecognition());
+      setLastTranscript("");
+      lastProcessedRef.current = "";
+      playVoice("mic_off");
+      return;
     }
-  }, [isActive, startRecognition]);
+
+    setIsActive(true);
+    setLastTranscript("");
+    lastProcessedRef.current = "";
+    playVoice("mic_on").finally(() => {
+      const delay = getVoiceAssistantConfig().echoGuardDelayMs;
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = setTimeout(() => {
+        if (isActiveRef.current && !recognitionRef.current && !isCurrentlySpeaking()) {
+          startRecognition();
+        }
+      }, delay);
+    });
+  }, [isActive, startRecognition, stopRecognition]);
 
   const turnOff = useCallback(() => {
-    if (recognitionRef.current) {
-      try { recognitionRef.current.stop(); } catch { /* ok */ }
-      recognitionRef.current = null;
-    }
+    stopRecognition();
     stopAllVoice();
+    if (restartTimerRef.current) {
+      clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
+    }
     setIsActive(false);
     setIsDictating(false);
     isDictatingRef.current = false;
-    setLastTranscript('');
-    lastProcessedRef.current = '';
-  }, []);
+    setLastTranscript("");
+    lastProcessedRef.current = "";
+  }, [stopRecognition]);
 
   useEffect(() => { turnOffRef.current = turnOff; }, [turnOff]);
 
@@ -374,12 +515,11 @@ export function useVoiceAssistant(onAction?: VoiceActionHandler) {
 
   useEffect(() => {
     return () => {
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch { /* ok */ }
-      }
+      stopRecognition();
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
     };
-  }, []);
+  }, [stopRecognition]);
 
   return {
     isActive,
@@ -395,13 +535,13 @@ export function useVoiceAssistant(onAction?: VoiceActionHandler) {
 export function useVoiceModal() {
   const [isOpen, setIsOpen] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [transcript, setTranscript] = useState('');
+  const [transcript, setTranscript] = useState("");
   const recognitionRef = useRef<any>(null);
   const startTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const stopRecognition = useCallback(() => {
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
+      try { recognitionRef.current.stop(); } catch { /* ignore */ }
       recognitionRef.current = null;
     }
     setIsListening(false);
@@ -410,27 +550,29 @@ export function useVoiceModal() {
   const startRecognition = useCallback(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      setTranscript('Голосовой ввод не поддерживается в этом браузере.');
+      setTranscript("Голосовой ввод не поддерживается в этом браузере.");
       setIsListening(false);
       return;
     }
 
     const recognition = new SpeechRecognition();
-    recognition.lang = 'ru-RU';
+    recognition.lang = "ru-RU";
     recognition.interimResults = true;
     recognition.continuous = true;
     recognition.maxAlternatives = 1;
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
-      let finalTranscript = '';
-      let interimTranscript = '';
+      let finalTranscript = "";
+      let interimTranscript = "";
+
       for (let i = 0; i < event.results.length; i++) {
         if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript + ' ';
+          finalTranscript += `${event.results[i][0].transcript} `;
         } else {
           interimTranscript += event.results[i][0].transcript;
         }
       }
+
       setTranscript((finalTranscript + interimTranscript).trim());
     };
 
@@ -444,11 +586,11 @@ export function useVoiceModal() {
 
   const openModal = useCallback(() => {
     setIsOpen(true);
-    setTranscript('');
-    playVoice('listen');
+    setTranscript("");
+    playVoice("listen");
     startTimerRef.current = setTimeout(() => {
       startRecognition();
-    }, 2500);
+    }, 1_200);
   }, [startRecognition]);
 
   const closeModal = useCallback(() => {

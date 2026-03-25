@@ -5,20 +5,40 @@ import { join } from "path";
 import { randomUUID } from "crypto";
 import { tmpdir } from "os";
 import jwt from "jsonwebtoken";
+import { JWT_SECRET } from "../config";
 
 const router: IRouter = Router();
 
 const TIMEOUT_MS = 10000;
 const MAX_OUTPUT = 50000;
-const JWT_SECRET = process.env.JWT_SECRET || "belka-ai-secret-key-2024";
 
 const SAFE_ENV: Record<string, string> = {
-  PATH: "/usr/bin:/bin:/usr/local/bin",
+  PATH: process.env.PATH || "",
   HOME: tmpdir(),
   TMPDIR: tmpdir(),
+  TEMP: tmpdir(),
+  TMP: tmpdir(),
+  USERPROFILE: tmpdir(),
+  SYSTEMROOT: process.env.SYSTEMROOT || "",
   NODE_OPTIONS: "--max-old-space-size=128",
   NODE_ENV: "sandbox",
 };
+
+function getCommand(name: "node" | "npx" | "python"): string {
+  if (process.platform !== "win32") {
+    if (name === "python") return "python3";
+    return name;
+  }
+
+  switch (name) {
+    case "npx":
+      return "npx.cmd";
+    case "python":
+      return "python";
+    default:
+      return "node.exe";
+  }
+}
 
 function truncate(str: string, max: number): string {
   return str.length > max ? str.slice(0, max) + "\n...[truncated]" : str;
@@ -91,24 +111,24 @@ router.post("/run", requireAuth, async (req, res) => {
       case "js":
       case "node":
         ext = ".mjs";
-        cmd = "node";
+        cmd = getCommand("node");
         args = ["--no-warnings"];
         break;
       case "typescript":
       case "ts":
         ext = ".ts";
-        cmd = "npx";
+        cmd = getCommand("npx");
         args = ["tsx"];
         break;
       case "python":
       case "py":
         ext = ".py";
-        cmd = "python3";
+        cmd = getCommand("python");
         args = [];
         break;
       default:
         ext = ".mjs";
-        cmd = "node";
+        cmd = getCommand("node");
         args = ["--no-warnings"];
     }
 

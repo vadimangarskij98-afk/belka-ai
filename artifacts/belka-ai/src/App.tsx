@@ -47,6 +47,14 @@ function AdminGuard({ component: Component }: { component: React.ComponentType }
   return <Component />;
 }
 
+function AuthGuard({ component: Component }: { component: React.ComponentType }) {
+  const auth = useAuth();
+  if (!auth.user || !auth.token) {
+    return <Redirect to="/auth" />;
+  }
+  return <Component />;
+}
+
 function Router() {
   return (
     <Suspense fallback={<PageLoader />}>
@@ -56,8 +64,8 @@ function Router() {
         <Route path="/auth" component={AuthPage} />
         <Route path="/docs" component={DocsPage} />
 
-        <Route path="/chat" component={ChatPage} />
-        <Route path="/chat/:id" component={ChatPage} />
+        <Route path="/chat">{() => <AuthGuard component={ChatPage} />}</Route>
+        <Route path="/chat/:id">{() => <AuthGuard component={ChatPage} />}</Route>
         <Route path="/shared/:token" component={SharedChat} />
 
         <Route path="/admin">{() => <AdminGuard component={AdminDashboard} />}</Route>

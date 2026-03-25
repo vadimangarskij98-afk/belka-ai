@@ -592,7 +592,7 @@ components:
           type: string
         mode:
           type: string
-          enum: [chat, code, multi-agent]
+          enum: [chat, code, multi-agent, image]
         createdAt:
           type: string
         updatedAt:
@@ -629,7 +629,7 @@ components:
           type: string
         mode:
           type: string
-          enum: [chat, code, multi-agent]
+          enum: [chat, code, multi-agent, image]
         repositoryId:
           type: string
       required:
@@ -696,7 +696,7 @@ components:
           type: string
         mode:
           type: string
-          enum: [chat, code, multi-agent, search]
+          enum: [chat, code, multi-agent, image, search]
         attachments:
           type: array
           items:

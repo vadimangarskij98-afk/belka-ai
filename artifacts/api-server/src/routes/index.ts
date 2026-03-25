@@ -14,6 +14,7 @@ import conversationsRouter from "./conversations";
 import agentsRouter from "./agents";
 import adminRouter from "./admin";
 import voiceRouter from "./voice";
+import mcpRouter from "./mcp";
 import memoryRouter from "./memory";
 import repositoriesRouter from "./repositories";
 import searchRouter from "./search";
@@ -27,8 +28,7 @@ import terminalRouter from "./terminal";
 import gitRouter from "./git";
 import previewRouter from "./preview";
 import referralsRouter from "./referrals";
-
-const JWT_SECRET = process.env.JWT_SECRET || "belka-ai-secret-key-2024";
+import { BELKA_CODER_API_BASE_URL, JWT_SECRET, normalizeBelkaMode } from "../config";
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   try {
@@ -63,9 +63,10 @@ const router: IRouter = Router();
 router.use(healthRouter);
 router.use("/auth", authRouter);
 router.use("/conversations", requireAuth, conversationsRouter);
-router.use("/agents", agentsRouter);
+router.use("/agents", requireAdmin, agentsRouter);
 router.use("/admin", requireAdmin, adminRouter);
-router.use("/voice", voiceRouter);
+router.use("/voice", requireAuth, voiceRouter);
+router.use("/mcp", requireAuth, mcpRouter);
 router.use("/memory", requireAuth, memoryRouter);
 router.use("/repositories", requireAuth, repositoriesRouter);
 router.use("/search", requireAuth, searchRouter);
@@ -81,10 +82,19 @@ router.use(requireAuth, previewRouter);
 
 router.post("/belka/chat", requireAuth, async (req: Request, res: Response) => {
   try {
-    const response = await fetch("https://belka-coder-api-production.up.railway.app/chat", {
+    const normalizedMode = normalizeBelkaMode(req.body?.mode);
+    const payload = {
+      ...req.body,
+      mode: normalizedMode,
+      message: req.body?.message ?? req.body?.content ?? "",
+      conversation_id: req.body?.conversation_id ?? req.body?.conversationId,
+      system_prompt: req.body?.system_prompt ?? req.body?.systemPrompt,
+    };
+
+    const response = await fetch(`${BELKA_CODER_API_BASE_URL}/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(req.body),
+      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(120000),
     });
     const data = await response.json();

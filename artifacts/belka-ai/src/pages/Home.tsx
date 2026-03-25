@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { motion, useInView } from "framer-motion";
+import { motion, useInView, type Variants } from "framer-motion";
 import { useRef, lazy, Suspense, useState } from "react";
 import { ArrowRight, Code2, Network, Mic, Brain, Zap, Shield, Terminal, Check, Star, Crown, Play } from "lucide-react";
 import { ShinyText } from "@/components/ui-custom/ShinyText";
@@ -12,10 +12,18 @@ import { t } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import { AgentRole } from "@workspace/api-client-react";
 
-const fadeUp = {
+const fadeUp: Variants = {
   hidden: { opacity: 0, y: 24 },
-  visible: (i: number) => ({ opacity: 1, y: 0, transition: { delay: i * 0.1, duration: 0.5, ease: "easeOut" } }),
-} as const;
+  visible: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: {
+      delay: i * 0.1,
+      duration: 0.5,
+      ease: [0.16, 1, 0.3, 1],
+    },
+  }),
+};
 
 export default function Home() {
   const { user } = useAuth();

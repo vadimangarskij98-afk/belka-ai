@@ -10,11 +10,16 @@ import {
 import fs from "fs";
 import path from "path";
 import { getWorkspace, sanitizeWorkspacePath } from "../lib/workspace-state";
+import {
+  BELKA_CODER_API_BASE_URL,
+  BELKA_DEFAULT_IMAGE_MODEL,
+  OPENROUTER_API_URL,
+  normalizeBelkaMode,
+  type BelkaMode,
+} from "../config";
+import { mcpRuntime, type McpServerSnapshot } from "../lib/mcp-runtime";
 
 const router: IRouter = Router();
-
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const BELKA_CODER_API = "https://belka-coder-api-production.up.railway.app";
 
 const MODEL_CONFIG = {
   coder: "google/gemini-2.5-flash",
@@ -66,10 +71,21 @@ function getModelForRole(role: "coder" | "chat" | "reviewer" | "researcher"): st
   return MODEL_CONFIG[role];
 }
 
+function findLastUserMessageIndex(messages: Array<{ role: "user" | "assistant"; content: string }>): number {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    if (messages[index].role === "user") {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
 async function callBelkaCoder(
   message: string,
   conversationId: string,
   onDelta: (text: string) => void,
+  mode: BelkaMode,
   temperature: number = 0.7,
   maxTokens: number = 4096,
   systemPrompt?: string,
@@ -78,12 +94,14 @@ async function callBelkaCoder(
   let reply = "";
 
   try {
-    const response = await fetch(`${BELKA_CODER_API}/chat`, {
+    const response = await fetch(`${BELKA_CODER_API_BASE_URL}/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message,
         conversation_id: conversationId,
+        mode,
+        system_prompt: systemPrompt,
         temperature,
         max_tokens: maxTokens,
       }),
@@ -137,7 +155,7 @@ async function streamOpenRouter(
   maxTokens: number,
   onDelta: (text: string) => void,
 ): Promise<string> {
-  const response = await fetch(OPENROUTER_URL, {
+  const response = await fetch(OPENROUTER_API_URL, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
@@ -204,7 +222,7 @@ async function callOpenRouter(
   messages: { role: string; content: string }[],
   maxTokens: number,
 ): Promise<string> {
-  const response = await fetch(OPENROUTER_URL, {
+  const response = await fetch(OPENROUTER_API_URL, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
@@ -295,17 +313,305 @@ function shouldGenerateImage(content: string): boolean {
 
 async function generateImage(prompt: string): Promise<string | null> {
   try {
-    const encodedPrompt = encodeURIComponent(prompt);
-    const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&nologo=true&seed=${Date.now()}`;
-    return imageUrl;
+    const response = await fetch(`${BELKA_CODER_API_BASE_URL}/pollinations/image`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt,
+        model: BELKA_DEFAULT_IMAGE_MODEL,
+        width: 1024,
+        height: 1024,
+        quality: "medium",
+        delivery: "upload",
+      }),
+      signal: AbortSignal.timeout(120000),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json() as {
+      url?: string;
+      b64_json?: string;
+      content_type?: string;
+    };
+
+    if (data.url) {
+      return data.url;
+    }
+
+    if (data.b64_json && data.content_type) {
+      return `data:${data.content_type};base64,${data.b64_json}`;
+    }
+
+    return null;
   } catch {
     return null;
   }
 }
 
-async function getMemoryContext(): Promise<string> {
+interface McpToolPlan {
+  serverId: string;
+  toolName: string;
+  arguments: Record<string, unknown>;
+  reason?: string;
+}
+
+function extractJsonBlock(text: string): string {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  return (fenced?.[1] ?? text).trim();
+}
+
+function truncateText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength)}...`;
+}
+
+function summarizeToolOutput(result: {
+  text?: string;
+  structuredContent?: unknown;
+  content?: Array<Record<string, unknown>>;
+  ok?: boolean;
+}) {
+  const text = typeof result.text === "string" && result.text.trim()
+    ? result.text.trim()
+    : JSON.stringify(result.structuredContent ?? result.content ?? null, null, 2);
+
+  return truncateText(text || "No tool output", 2500);
+}
+
+function formatMcpCapabilities(servers: McpServerSnapshot[]) {
+  return servers.map((server) => {
+    const toolDigest = server.tools.map((tool) => ({
+      name: tool.name,
+      description: truncateText(tool.description || "", 220),
+      inputSchema: truncateText(JSON.stringify(tool.inputSchema ?? {}), 400),
+    }));
+
+    return {
+      serverId: server.id,
+      serverName: server.name,
+      description: truncateText(server.description || "", 240),
+      tools: toolDigest,
+    };
+  });
+}
+
+function parseMcpToolPlan(text: string): McpToolPlan[] {
   try {
-    const memories = await db.select().from(memoryTable).orderBy(desc(memoryTable.createdAt)).limit(30);
+    const parsed = JSON.parse(extractJsonBlock(text)) as
+      | McpToolPlan[]
+      | { calls?: McpToolPlan[] };
+
+    const calls = Array.isArray(parsed) ? parsed : parsed.calls ?? [];
+
+    return calls
+      .filter((call): call is McpToolPlan =>
+        Boolean(
+          call
+          && typeof call.serverId === "string"
+          && typeof call.toolName === "string"
+          && call.serverId.trim()
+          && call.toolName.trim()
+          && call.arguments
+          && typeof call.arguments === "object"
+          && !Array.isArray(call.arguments),
+        ),
+      )
+      .slice(0, 3)
+      .map((call) => ({
+        serverId: call.serverId.trim(),
+        toolName: call.toolName.trim(),
+        arguments: call.arguments,
+        reason: typeof call.reason === "string" ? truncateText(call.reason.trim(), 280) : undefined,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function shouldConsiderMcp(content: string, mode: string, servers: McpServerSnapshot[]) {
+  if (servers.length === 0 || mode === "image") {
+    return false;
+  }
+
+  if (mode === "code" || mode === "multi-agent") {
+    return true;
+  }
+
+  const lower = content.toLowerCase();
+  const triggers = [
+    "github",
+    "repo",
+    "repository",
+    "issue",
+    "pull request",
+    "browser",
+    "page",
+    "site",
+    "screenshot",
+    "playwright",
+    "mcp",
+    "file",
+    "folder",
+    "workspace",
+    "read",
+    "docs",
+    "documentation",
+    "latest",
+    "web",
+    "search",
+  ];
+
+  return triggers.some((trigger) => lower.includes(trigger));
+}
+
+async function planMcpToolCalls(content: string, mode: string, servers: McpServerSnapshot[]): Promise<McpToolPlan[]> {
+  if (!shouldConsiderMcp(content, mode, servers)) {
+    return [];
+  }
+
+  const plannerPrompt = [
+    "You are BELKA MCP planner.",
+    "Return JSON only, no markdown and no explanations.",
+    'Use this schema: {"calls":[{"serverId":"...","toolName":"...","arguments":{},"reason":"..."}]}.',
+    "If no tools are needed, return {\"calls\":[]}.",
+    "Never invent server ids or tool names.",
+    "Use at most 3 tool calls.",
+  ].join(" ");
+
+  const plannerInput = JSON.stringify({
+    task: content,
+    mode,
+    availableServers: formatMcpCapabilities(servers),
+  });
+
+  try {
+    const apiKey = getOpenRouterKey();
+    if (apiKey) {
+      const result = await callOpenRouter(
+        apiKey,
+        getModelForRole("researcher"),
+        plannerPrompt,
+        [{ role: "user", content: plannerInput }],
+        1400,
+      );
+      return parseMcpToolPlan(result);
+    }
+
+    const result = await callBelkaCoder(
+      plannerInput,
+      `mcp-plan-${Date.now()}`,
+      () => {},
+      normalizeBelkaMode(mode),
+      0.1,
+      1400,
+      plannerPrompt,
+    );
+
+    return parseMcpToolPlan(result);
+  } catch {
+    return [];
+  }
+}
+
+async function runMcpTooling(
+  userId: number,
+  content: string,
+  mode: string,
+  res: any,
+): Promise<{ context: string; runs: Array<{ serverId: string; toolName: string; ok: boolean }> }> {
+  const connectedServers = mcpRuntime.listServers(String(userId))
+    .filter((server) => server.connected && server.tools.length > 0);
+
+  if (connectedServers.length === 0) {
+    return { context: "", runs: [] };
+  }
+
+  const toolPlans = await planMcpToolCalls(content, mode, connectedServers);
+  if (toolPlans.length === 0) {
+    return { context: "", runs: [] };
+  }
+
+  sendSSE(res, "status", { step: "tooling", text: "Подключаю MCP-инструменты..." });
+
+  const contextParts: string[] = [];
+  const runs: Array<{ serverId: string; toolName: string; ok: boolean }> = [];
+
+  for (const plan of toolPlans) {
+    const server = connectedServers.find((item) => item.id === plan.serverId);
+    const tool = server?.tools.find((item) => item.name === plan.toolName);
+
+    if (!server || !tool) {
+      continue;
+    }
+
+    sendSSE(res, "tool_call", {
+      tool: `${server.name}: ${plan.toolName}`,
+      args: plan.arguments,
+      status: "running",
+    });
+
+    try {
+      const result = await mcpRuntime.callTool(String(userId), plan.serverId, plan.toolName, plan.arguments);
+      const summary = summarizeToolOutput(result);
+
+      sendSSE(res, "tool_result", {
+        tool: `${server.name}: ${plan.toolName}`,
+        args: plan.arguments,
+        status: result.ok ? "done" : "error",
+        result: truncateText(summary, 160),
+      });
+
+      contextParts.push([
+        `### ${server.name} / ${plan.toolName}`,
+        plan.reason ? `Reason: ${plan.reason}` : "",
+        summary,
+      ].filter(Boolean).join("\n"));
+
+      runs.push({ serverId: plan.serverId, toolName: plan.toolName, ok: Boolean(result.ok) });
+    } catch (error) {
+      sendSSE(res, "tool_result", {
+        tool: `${server.name}: ${plan.toolName}`,
+        args: plan.arguments,
+        status: "error",
+        error: error instanceof Error ? error.message : "Tool call failed",
+      });
+      runs.push({ serverId: plan.serverId, toolName: plan.toolName, ok: false });
+    }
+  }
+
+  if (contextParts.length === 0) {
+    return { context: "", runs };
+  }
+
+  return {
+    context: `\n\n--- MCP TOOL RESULTS ---\n${contextParts.join("\n\n")}`,
+    runs,
+  };
+}
+
+async function getOwnedConversation(userId: number, conversationId: number) {
+  const conversations = await db.select()
+    .from(conversationsTable)
+    .where(and(eq(conversationsTable.id, conversationId), eq(conversationsTable.userId, userId)))
+    .limit(1);
+
+  return conversations[0] ?? null;
+}
+
+async function getMemoryContext(userId: number): Promise<string> {
+  try {
+    const memories = await db.select()
+      .from(memoryTable)
+      .where(eq(memoryTable.userId, userId))
+      .orderBy(desc(memoryTable.createdAt))
+      .limit(30);
+
     if (memories.length === 0) return "";
     const grouped: Record<string, string[]> = {};
     for (const m of memories) {
@@ -324,7 +630,7 @@ async function getMemoryContext(): Promise<string> {
   }
 }
 
-async function autoExtractFacts(content: string, response: string): Promise<void> {
+async function autoExtractFacts(userId: number, content: string, response: string): Promise<void> {
   try {
     const factPatterns = [
       { regex: /(?:проект|project)\s+(?:называется|called|named)\s+["']?([^"'\n.]+)/i, key: "project_name", category: "project" },
@@ -344,10 +650,11 @@ async function autoExtractFacts(content: string, response: string): Promise<void
     if (facts.length > 0) {
       for (const fact of facts) {
         const existing = await db.select().from(memoryTable)
-          .where(eq(memoryTable.key, fact.key))
+          .where(and(eq(memoryTable.userId, userId), eq(memoryTable.key, fact.key)))
           .limit(1);
         if (existing.length === 0) {
           await db.insert(memoryTable).values({
+            userId,
             key: fact.key,
             value: fact.value,
             category: fact.category,
@@ -364,15 +671,21 @@ function sendSSE(res: any, event: string, data: any) {
 
 router.get("/", async (req, res) => {
   try {
+    const userId = req.userId;
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 20;
     const offset = (page - 1) * limit;
     const archived = req.query.archived === "true";
     const convs = await db.select().from(conversationsTable)
-      .where(eq(conversationsTable.isArchived, archived))
+      .where(and(eq(conversationsTable.userId, userId), eq(conversationsTable.isArchived, archived)))
       .orderBy(desc(conversationsTable.updatedAt)).limit(limit).offset(offset);
     const total = await db.select({ count: count() }).from(conversationsTable)
-      .where(eq(conversationsTable.isArchived, archived));
+      .where(and(eq(conversationsTable.userId, userId), eq(conversationsTable.isArchived, archived)));
     res.json({
       conversations: convs.map(c => ({
         id: String(c.id),
@@ -394,8 +707,15 @@ router.get("/", async (req, res) => {
 
 router.post("/", async (req, res) => {
   try {
+    const userId = req.userId;
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
     const { title, agentId, mode, repositoryId } = req.body;
     const inserted = await db.insert(conversationsTable).values({
+      userId,
       title: title || "New Conversation",
       agentId,
       mode: mode || "chat",
@@ -419,13 +739,18 @@ router.post("/", async (req, res) => {
 
 router.get("/:id", async (req, res) => {
   try {
+    const userId = req.userId;
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
     const id = Number(req.params.id);
-    const convs = await db.select().from(conversationsTable).where(eq(conversationsTable.id, id)).limit(1);
-    if (convs.length === 0) {
+    const conv = await getOwnedConversation(userId, id);
+    if (!conv) {
       res.status(404).json({ error: "Not found" });
       return;
     }
-    const conv = convs[0];
     const msgs = await db.select({ count: count() }).from(messagesTable).where(eq(messagesTable.conversationId, id));
     res.json({
       id: String(conv.id),
@@ -444,9 +769,21 @@ router.get("/:id", async (req, res) => {
 
 router.delete("/:id", async (req, res) => {
   try {
+    const userId = req.userId;
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
     const id = Number(req.params.id);
+    const conv = await getOwnedConversation(userId, id);
+    if (!conv) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
     await db.delete(messagesTable).where(eq(messagesTable.conversationId, id));
-    await db.delete(conversationsTable).where(eq(conversationsTable.id, id));
+    await db.delete(conversationsTable).where(and(eq(conversationsTable.id, id), eq(conversationsTable.userId, userId)));
     res.status(204).send();
   } catch (err) {
     req.log.error({ err }, "Delete conversation error");
@@ -456,11 +793,23 @@ router.delete("/:id", async (req, res) => {
 
 router.patch("/:id/archive", async (req, res) => {
   try {
+    const userId = req.userId;
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
     const id = Number(req.params.id);
+    const conv = await getOwnedConversation(userId, id);
+    if (!conv) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
     await db.update(conversationsTable).set({
       isArchived: true,
       archivedAt: new Date(),
-    }).where(eq(conversationsTable.id, id));
+    }).where(and(eq(conversationsTable.id, id), eq(conversationsTable.userId, userId)));
     res.json({ success: true });
   } catch (err) {
     req.log.error({ err }, "Archive conversation error");
@@ -470,11 +819,23 @@ router.patch("/:id/archive", async (req, res) => {
 
 router.patch("/:id/unarchive", async (req, res) => {
   try {
+    const userId = req.userId;
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
     const id = Number(req.params.id);
+    const conv = await getOwnedConversation(userId, id);
+    if (!conv) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
     await db.update(conversationsTable).set({
       isArchived: false,
       archivedAt: null,
-    }).where(eq(conversationsTable.id, id));
+    }).where(and(eq(conversationsTable.id, id), eq(conversationsTable.userId, userId)));
     res.json({ success: true });
   } catch (err) {
     req.log.error({ err }, "Unarchive conversation error");
@@ -484,7 +845,19 @@ router.patch("/:id/unarchive", async (req, res) => {
 
 router.get("/:id/messages", async (req, res) => {
   try {
+    const userId = req.userId;
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
     const id = Number(req.params.id);
+    const conv = await getOwnedConversation(userId, id);
+    if (!conv) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
     const msgs = await db.select().from(messagesTable).where(eq(messagesTable.conversationId, id)).orderBy(messagesTable.createdAt);
     res.json({
       messages: msgs.map(m => ({
@@ -506,8 +879,21 @@ router.get("/:id/messages", async (req, res) => {
 
 router.post("/:id/messages", async (req, res) => {
   try {
+    const userId = req.userId;
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
     const conversationId = Number(req.params.id);
+    const conversation = await getOwnedConversation(userId, conversationId);
+    if (!conversation) {
+      res.status(404).json({ error: "Conversation not found" });
+      return;
+    }
+
     const { content, mode, useMultiAgent } = req.body;
+    const requestedMode = typeof mode === "string" && mode.trim() ? mode : conversation.mode;
 
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
@@ -552,7 +938,7 @@ router.post("/:id/messages", async (req, res) => {
     }
 
     let generatedImageUrl: string | null = null;
-    if (mode === "image" || shouldGenerateImage(content)) {
+    if (requestedMode === "image" || shouldGenerateImage(content)) {
       sendSSE(res, "status", { step: "generating_image", text: "Генерирую изображение..." });
       generatedImageUrl = await generateImage(content);
       if (generatedImageUrl) {
@@ -560,10 +946,13 @@ router.post("/:id/messages", async (req, res) => {
       }
     }
 
-    const memoryContext = await getMemoryContext();
+    const memoryContext = await getMemoryContext(userId);
+    const mcpResult = await runMcpTooling(userId, content, requestedMode, res);
+    const mcpContext = mcpResult.context;
 
     let enrichedContent = content;
     if (memoryContext) enrichedContent += "\n\n" + memoryContext;
+    if (mcpContext) enrichedContent += mcpContext;
     if (searchContext) enrichedContent += "\n\n--- ВЕБ-ПОИСК ---\n" + searchContext;
     if (generatedImageUrl) enrichedContent += `\n\n--- СГЕНЕРИРОВАННОЕ ИЗОБРАЖЕНИЕ ---\n![Generated](${generatedImageUrl})\nИзображение уже сгенерировано и показано пользователю.`;
 
@@ -578,24 +967,26 @@ router.post("/:id/messages", async (req, res) => {
     const belkaConvId = `conv-${conversationId}`;
 
     const enrichedMessages = messages.map(m => ({ role: m.role, content: m.content }));
-    if (searchContext || memoryContext) {
-      const lastIdx = enrichedMessages.findLastIndex(m => m.role === "user");
+    if (searchContext || memoryContext || mcpContext || generatedImageUrl) {
+      const lastIdx = findLastUserMessageIndex(enrichedMessages);
       if (lastIdx >= 0) {
         let extra = "";
         if (memoryContext) extra += "\n\n" + memoryContext;
+        if (mcpContext) extra += mcpContext;
         if (searchContext) extra += "\n\n--- ВЕБ-ПОИСК ---\n" + searchContext;
         if (generatedImageUrl) extra += `\n\n--- СГЕНЕРИРОВАННОЕ ИЗОБРАЖЕНИЕ ---\n![Generated](${generatedImageUrl})`;
         enrichedMessages[lastIdx] = { ...enrichedMessages[lastIdx], content: enrichedMessages[lastIdx].content + extra };
       }
     }
 
-    if (useMultiAgent && mode === "multi-agent") {
+    if (useMultiAgent && requestedMode === "multi-agent") {
       sendSSE(res, "status", { step: "coding", text: "BELKA CODER пишет код..." });
 
       aiContent = await callBelkaCoder(
         fullMessage,
         belkaConvId,
         (delta) => sendSSE(res, "delta", { content: delta }),
+        "multiagent",
         0.7,
         4096,
         BELKA_CODER_SYSTEM_PROMPT,
@@ -615,6 +1006,7 @@ router.post("/:id/messages", async (req, res) => {
         `Проверь этот код/решение на баги, проблемы безопасности и предложи улучшения:\n\n${aiContent}`,
         `${belkaConvId}-review`,
         (delta) => sendSSE(res, "agent_delta", { content: delta, agent: "CODE REVIEWER" }),
+        "code",
         0.3,
         2048,
         REVIEWER_SYSTEM_PROMPT,
@@ -635,13 +1027,15 @@ router.post("/:id/messages", async (req, res) => {
         avatar: "reviewer",
       });
     } else {
-      const role = mode === "chat" ? "chat" as const : "coder" as const;
+      const role = requestedMode === "chat" || requestedMode === "image" ? "chat" as const : "coder" as const;
+      const belkaMode = normalizeBelkaMode(requestedMode);
       const systemPrompt = role === "chat" ? BELKA_CHAT_SYSTEM_PROMPT : BELKA_CODER_SYSTEM_PROMPT;
 
       aiContent = await callBelkaCoder(
         fullMessage,
         belkaConvId,
         (delta) => sendSSE(res, "delta", { content: delta }),
+        belkaMode,
         0.7,
         4096,
         systemPrompt,
@@ -676,6 +1070,7 @@ router.post("/:id/messages", async (req, res) => {
     const metadata: any = {};
     if (searchSources.length > 0) metadata.sources = searchSources;
     if (generatedImageUrl) metadata.image = generatedImageUrl;
+    if (mcpResult.runs.length > 0) metadata.mcp = mcpResult.runs;
 
     const savedMsg = await db.insert(messagesTable).values({
       conversationId,
@@ -686,15 +1081,17 @@ router.post("/:id/messages", async (req, res) => {
       metadata: Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : undefined,
     }).returning();
 
-    await db.update(conversationsTable).set({ updatedAt: new Date() }).where(eq(conversationsTable.id, conversationId));
+    await db.update(conversationsTable)
+      .set({ updatedAt: new Date() })
+      .where(and(eq(conversationsTable.id, conversationId), eq(conversationsTable.userId, userId)));
 
-    autoExtractFacts(content, aiContent).catch(() => {});
+    autoExtractFacts(userId, content, aiContent).catch(() => {});
 
     const estimatedTokens = Math.ceil((aiContent.length + content.length) / 4);
     try {
       const today = new Date().toISOString().slice(0, 10);
       const existing = await db.select().from(tokenUsageTable)
-        .where(and(eq(tokenUsageTable.userId, 1), eq(tokenUsageTable.date, today)))
+        .where(and(eq(tokenUsageTable.userId, userId), eq(tokenUsageTable.date, today)))
         .limit(1);
       if (existing.length > 0) {
         await db.update(tokenUsageTable)
@@ -702,7 +1099,7 @@ router.post("/:id/messages", async (req, res) => {
           .where(eq(tokenUsageTable.id, existing[0].id));
       } else {
         await db.insert(tokenUsageTable).values({
-          userId: 1,
+          userId,
           tokensUsed: estimatedTokens,
           date: today,
         });
@@ -713,6 +1110,7 @@ router.post("/:id/messages", async (req, res) => {
       id: String(savedMsg[0].id),
       searchUsed: searchSources.length > 0,
       imageGenerated: !!generatedImageUrl,
+      mcpUsed: mcpResult.runs.length > 0,
     });
 
     res.end();

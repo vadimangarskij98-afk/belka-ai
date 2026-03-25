@@ -20,8 +20,9 @@ import { SettingsModal } from "@/components/modals/SettingsModal";
 import { DocsModal } from "@/components/modals/DocsModal";
 import { PricingModal } from "@/components/modals/PricingModal";
 import { GitHubModal } from "@/components/modals/GitHubModal";
-import { useVoiceModal, useVoiceAssistant, playVoice } from "@/hooks/use-voice";
+import { useVoiceModal, useVoiceAssistant, playVoice, speakAssistantReply } from "@/hooks/use-voice";
 import type { VoiceAction } from "@/lib/voice-phrases";
+import { getVoiceAssistantConfig } from "@/lib/voice-config";
 import { t } from "@/lib/i18n";
 import { openLocalFolder, listLocalFiles, readLocalFile, writeLocalFile, type LocalFile, getLanguageFromFilename, getFileIcon } from "@/lib/local-fs";
 import { useTheme } from "@/lib/theme";
@@ -201,6 +202,7 @@ const STEP_ICONS: Record<string, any> = {
   searching: Search,
   generating: Sparkles,
   generating_image: ImageIcon,
+  tooling: Plug,
   coding: Code,
   reviewing: ShieldCheck,
   writing: FileCode,
@@ -281,9 +283,9 @@ function ModeSwitcher({ mode, setMode }: { mode: string; setMode: (m: any) => vo
         style={{
           left: indicatorStyle.left,
           width: indicatorStyle.width,
-          background: "linear-gradient(135deg, rgba(59,130,246,0.55), rgba(139,92,246,0.55))",
+          background: "linear-gradient(135deg, rgba(15,118,110,0.62), rgba(194,120,3,0.58))",
           backdropFilter: "blur(12px)",
-          boxShadow: "0 0 12px rgba(59,130,246,0.25), inset 0 1px 0 rgba(255,255,255,0.15), inset 0 -1px 0 rgba(0,0,0,0.1)",
+          boxShadow: "0 0 14px rgba(15,118,110,0.18), inset 0 1px 0 rgba(255,255,255,0.14), inset 0 -1px 0 rgba(0,0,0,0.12)",
           border: "1px solid rgba(255,255,255,0.12)",
         }}
       />
@@ -504,7 +506,10 @@ export default function ChatPage() {
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [previewStatusOpen, setPreviewStatusOpen] = useState(false);
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
-  const [workspacePath, setWorkspacePath] = useState<string | null>(null);
+  const [workspacePath, setWorkspacePath] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem("belka-workspace-path");
+  });
 
   const [streaming, setStreaming] = useState<StreamingState>({
     isStreaming: false,
@@ -647,14 +652,11 @@ export default function ChatPage() {
 
   const voiceModal = useVoiceModal();
   const voiceAssistant = useVoiceAssistant(handleVoiceAction);
+  const lastSpokenReplyRef = useRef("");
   const createConvMutation = useCreateConversation();
 
-  const { data: conversation } = useGetConversation(conversationId || "", {
-    query: { enabled: !!conversationId }
-  });
-  const { data: messagesData, refetch: refetchMessages } = useGetMessages(conversationId || "", {
-    query: { enabled: !!conversationId }
-  });
+  const { data: conversation } = useGetConversation(conversationId || "");
+  const { data: messagesData, refetch: refetchMessages } = useGetMessages(conversationId || "");
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -666,6 +668,15 @@ export default function ChatPage() {
     const mq = window.matchMedia("(max-width: 768px)");
     if (mq.matches) setSidebarCollapsed(true);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (workspacePath) {
+      window.localStorage.setItem("belka-workspace-path", workspacePath);
+    } else {
+      window.localStorage.removeItem("belka-workspace-path");
+    }
+  }, [workspacePath]);
 
   const handleSubmit = useCallback(async (text: string) => {
     if (!text.trim() || streaming.isStreaming) return;
@@ -705,6 +716,7 @@ export default function ChatPage() {
         imageUrl: null,
         imagePrompt: null,
       });
+      lastSpokenReplyRef.current = "";
 
       const BASE = import.meta.env.BASE_URL || "/";
       const API = `${BASE}api`.replace(/\/\/+/g, "/");
@@ -786,10 +798,13 @@ export default function ChatPage() {
           };
         });
         if (voiceAssistant.isActive) {
-          if (data.step === "searching") playVoice("researching");
-          else if (data.step === "thinking") playVoice("analyzing");
-          else if (data.step === "generating" || data.step === "coding") playVoice("writing");
-          else if (data.step === "reviewing") playVoice("checking");
+          const voiceConfig = getVoiceAssistantConfig();
+          if (voiceConfig.autoSpeakSteps) {
+            if (data.step === "searching") playVoice("researching");
+            else if (data.step === "thinking") playVoice("analyzing");
+            else if (data.step === "generating" || data.step === "coding") playVoice("writing");
+            else if (data.step === "reviewing") playVoice("checking");
+          }
         }
         break;
       case "sources":
@@ -864,6 +879,25 @@ export default function ChatPage() {
   useEffect(() => {
     handleSubmitRef.current = handleSubmit;
   }, [handleSubmit]);
+
+  useEffect(() => {
+    if (streaming.isStreaming || streaming.error || !streaming.content.trim()) return;
+    if (!voiceAssistant.isActive || mode !== "chat") return;
+
+    const config = getVoiceAssistantConfig();
+    if (!config.voiceEnabled || !config.autoSpeakReplies) return;
+
+    const speakable = streaming.content
+      .replace(/```[\s\S]*?```/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (!speakable || speakable.length > config.replyMaxChars) return;
+    if (lastSpokenReplyRef.current === speakable) return;
+
+    lastSpokenReplyRef.current = speakable;
+    void speakAssistantReply(speakable);
+  }, [mode, streaming.content, streaming.error, streaming.isStreaming, voiceAssistant.isActive]);
 
   const messages = messagesData?.messages || [];
 

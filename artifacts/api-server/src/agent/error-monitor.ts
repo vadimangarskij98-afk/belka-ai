@@ -107,7 +107,10 @@ export function errorHandlerMiddleware(
     stack: err.stack,
   });
 
-  const statusCode = (err as Record<string, number>).statusCode || 500;
+  const statusCode =
+    typeof (err as Error & { statusCode?: number }).statusCode === "number"
+      ? (err as Error & { statusCode?: number }).statusCode!
+      : 500;
 
   res.status(statusCode).json({
     error: {

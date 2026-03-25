@@ -2,9 +2,9 @@ import { Router, type IRouter } from "express";
 import { db, subscriptionPlansTable, promoCodesTable, tokenUsageTable, usersTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
 import jwt from "jsonwebtoken";
+import { JWT_SECRET } from "../config";
 
 const router: IRouter = Router();
-const JWT_SECRET = process.env.JWT_SECRET || "belka-ai-secret-key-2024";
 
 function getUserId(req: any): number | null {
   try {

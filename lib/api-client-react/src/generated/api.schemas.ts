@@ -56,6 +56,7 @@ export const ConversationMode = {
   chat: "chat",
   code: "code",
   "multi-agent": "multi-agent",
+  image: "image",
 } as const;
 
 export interface Conversation {
@@ -80,6 +81,7 @@ export const CreateConversationRequestMode = {
   chat: "chat",
   code: "code",
   "multi-agent": "multi-agent",
+  image: "image",
 } as const;
 
 export interface CreateConversationRequest {
@@ -129,6 +131,7 @@ export const SendMessageRequestMode = {
   chat: "chat",
   code: "code",
   "multi-agent": "multi-agent",
+  image: "image",
   search: "search",
 } as const;
 

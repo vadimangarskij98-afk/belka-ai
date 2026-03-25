@@ -1,11 +1,21 @@
 import { Router, type IRouter } from "express";
 import { db, memoryTable } from "@workspace/db";
+import { desc, eq } from "drizzle-orm";
 
 const router: IRouter = Router();
 
 router.get("/", async (req, res) => {
   try {
-    const memories = await db.select().from(memoryTable);
+    const userId = req.userId;
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    const memories = await db.select().from(memoryTable)
+      .where(eq(memoryTable.userId, userId))
+      .orderBy(desc(memoryTable.createdAt));
+
     res.json({
       memories: memories.map(m => ({
         id: String(m.id),
@@ -24,9 +34,16 @@ router.get("/", async (req, res) => {
 
 router.post("/", async (req, res) => {
   try {
+    const userId = req.userId;
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
     const { agentId, key, value, category } = req.body;
     const inserted = await db.insert(memoryTable).values({
       agentId,
+      userId,
       key,
       value,
       category: category || "fact",

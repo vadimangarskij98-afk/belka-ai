@@ -18,6 +18,10 @@ interface PreviewServer {
 
 let currentPreview: PreviewServer | null = null;
 
+function getPreviewCommand(name: "python"): string {
+  return process.platform === "win32" ? "python" : name;
+}
+
 function detectStartCommand(dir: string): { command: string; args: string[] } | null {
   const pkgPath = path.join(dir, "package.json");
   if (fs.existsSync(pkgPath)) {
@@ -32,7 +36,7 @@ function detectStartCommand(dir: string): { command: string; args: string[] } | 
   }
   if (fs.existsSync(path.join(dir, "main.py")) || fs.existsSync(path.join(dir, "app.py"))) {
     const entry = fs.existsSync(path.join(dir, "app.py")) ? "app.py" : "main.py";
-    return { command: "python3", args: [entry] };
+    return { command: getPreviewCommand("python"), args: [entry] };
   }
   return null;
 }

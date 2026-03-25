@@ -1,0 +1,13 @@
+.git
+.gitignore
+node_modules
+**/node_modules
+.playwright-cli
+frontend-dev.log
+frontend-dev.err.log
+artifacts/belka-ai/dist
+artifacts/mockup-sandbox/dist
+coverage
+tmp
+out-tsc
+*.tsbuildinfo

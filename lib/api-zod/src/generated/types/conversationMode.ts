@@ -13,4 +13,5 @@ export const ConversationMode = {
   chat: "chat",
   code: "code",
   "multi-agent": "multi-agent",
+  image: "image",
 } as const;

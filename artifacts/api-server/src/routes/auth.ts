@@ -4,10 +4,9 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { db, usersTable, tokenUsageTable, subscriptionPlansTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
+import { JWT_SECRET } from "../config";
 
 const router: IRouter = Router();
-
-const JWT_SECRET = process.env.JWT_SECRET || "belka-ai-secret-key-2024";
 
 function generateReferralCode(): string {
   return "BLK" + crypto.randomBytes(4).toString("hex").toUpperCase();

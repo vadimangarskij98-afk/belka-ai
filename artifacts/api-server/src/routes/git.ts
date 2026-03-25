@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import path from "path";
 import os from "os";
 import fs from "fs";
@@ -12,14 +12,12 @@ function sanitizeShellArg(arg: string): string {
 }
 
 function gitExec(args: string[], cwd: string): string {
-  const cmd = ["git", ...args].join(" ");
-  return execSync(cmd, {
+  return execFileSync("git", args, {
     cwd,
     timeout: 60000,
     maxBuffer: 5 * 1024 * 1024,
     encoding: "utf-8",
     env: { ...process.env, HOME: os.homedir(), GIT_TERMINAL_PROMPT: "0" },
-    shell: "/bin/bash",
   });
 }
 
@@ -88,7 +86,7 @@ router.post("/git/commit", (req: Request, res: Response) => {
 
   try {
     gitExec(["add", "-A"], workspace);
-    const output = gitExec(["commit", "-m", `"${safeMsg}"`], workspace);
+    const output = gitExec(["commit", "-m", safeMsg], workspace);
     res.json({ success: true, output: output.trim() });
   } catch (err: any) {
     if (err.stderr?.includes("nothing to commit")) {

@@ -55,6 +55,22 @@ const chatLimiter = rateLimit({
   message: { error: "Too many chat requests, please slow down" },
 });
 
+const voiceLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many voice requests, please slow down" },
+});
+
+const mcpLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many MCP requests, please slow down" },
+});
+
 app.use(globalLimiter);
 
 app.use(
@@ -85,6 +101,8 @@ app.disable("x-powered-by");
 app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/register", authLimiter);
 app.use("/api/belka/chat", chatLimiter);
+app.use("/api/voice", voiceLimiter);
+app.use("/api/mcp", mcpLimiter);
 
 app.use("/api", router);
 

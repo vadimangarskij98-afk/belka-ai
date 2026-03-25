@@ -13,5 +13,6 @@ export const SendMessageRequestMode = {
   chat: "chat",
   code: "code",
   "multi-agent": "multi-agent",
+  image: "image",
   search: "search",
 } as const;
