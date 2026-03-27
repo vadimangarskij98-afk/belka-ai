@@ -1,16 +1,21 @@
 import { Router, type Request, type Response } from "express";
 import fs from "fs";
 import path from "path";
-import { getWorkspace, setWorkspace, sanitizeWorkspacePath } from "../lib/workspace-state";
+import { ensureWorkspace, getWorkspace, setWorkspace, sanitizeWorkspacePath } from "../lib/workspace-state";
 
 const router = Router();
 const deletedBackups = new Map<string, { content: string; deletedAt: number }>();
 
-function ensureWorkspace() {
-  const ws = getWorkspace();
-  if (!fs.existsSync(ws)) {
-    fs.mkdirSync(ws, { recursive: true });
+function getRequiredUserId(req: Request): number {
+  if (!req.userId) {
+    throw new Error("userId missing on authenticated route");
   }
+
+  return req.userId;
+}
+
+function getBackupKey(userId: number, filePath: string): string {
+  return `${userId}:${filePath}`;
 }
 
 function getFilesRecursive(dir: string, base: string = "", depth: number = 0): any[] {
@@ -35,29 +40,45 @@ function getFilesRecursive(dir: string, base: string = "", depth: number = 0): a
   });
 }
 
-router.get("/workspace", (_req: Request, res: Response) => {
-  ensureWorkspace();
-  res.json({ path: getWorkspace(), exists: true });
+router.get("/workspace", (req: Request, res: Response) => {
+  const userId = getRequiredUserId(req);
+  const workspace = ensureWorkspace(userId);
+  res.json({ path: workspace, exists: true });
 });
 
 router.post("/workspace/set", (req: Request, res: Response) => {
+  const userId = getRequiredUserId(req);
   const { path: newPath } = req.body;
   if (!newPath) { res.status(400).json({ error: "path required" }); return; }
-  const ws = setWorkspace(newPath);
-  ensureWorkspace();
-  res.json({ path: ws, exists: true });
+  try {
+    const ws = setWorkspace(userId, newPath);
+    ensureWorkspace(userId);
+    res.json({ path: ws, exists: true });
+  } catch (error) {
+    res.status(403).json({ error: error instanceof Error ? error.message : "invalid workspace path" });
+  }
 });
 
-router.get("/workspace/files", (_req: Request, res: Response) => {
-  ensureWorkspace();
-  const files = getFilesRecursive(getWorkspace());
-  res.json({ workspace: getWorkspace(), files });
+router.get("/workspace/files", (req: Request, res: Response) => {
+  const userId = getRequiredUserId(req);
+  const workspace = ensureWorkspace(userId);
+  const browsePath = req.query.path as string | undefined;
+  const targetDir = browsePath ? sanitizeWorkspacePath(userId, browsePath) : workspace;
+  if (!targetDir) { res.status(403).json({ error: "path outside workspace" }); return; }
+  if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
+    res.status(404).json({ error: "directory not found" });
+    return;
+  }
+
+  const files = getFilesRecursive(targetDir);
+  res.json({ workspace: targetDir, files });
 });
 
 router.get("/workspace/file/content", (req: Request, res: Response) => {
+  const userId = getRequiredUserId(req);
   const filePath = req.query.path as string;
   if (!filePath) { res.status(400).json({ error: "path query required" }); return; }
-  const safe = sanitizeWorkspacePath(filePath);
+  const safe = sanitizeWorkspacePath(userId, filePath);
   if (!safe) { res.status(403).json({ error: "path outside workspace" }); return; }
   if (!fs.existsSync(safe)) { res.status(404).json({ error: "file not found" }); return; }
   const content = fs.readFileSync(safe, "utf-8");
@@ -66,9 +87,10 @@ router.get("/workspace/file/content", (req: Request, res: Response) => {
 });
 
 router.post("/workspace/file", (req: Request, res: Response) => {
+  const userId = getRequiredUserId(req);
   const { path: filePath, content } = req.body;
   if (!filePath) { res.status(400).json({ error: "path required" }); return; }
-  const safe = sanitizeWorkspacePath(filePath);
+  const safe = sanitizeWorkspacePath(userId, filePath);
   if (!safe) { res.status(403).json({ error: "path outside workspace" }); return; }
   const dir = path.dirname(safe);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -77,13 +99,14 @@ router.post("/workspace/file", (req: Request, res: Response) => {
 });
 
 router.put("/workspace/file", (req: Request, res: Response) => {
+  const userId = getRequiredUserId(req);
   const { path: filePath, content } = req.body;
   if (!filePath) { res.status(400).json({ error: "path required" }); return; }
-  const safe = sanitizeWorkspacePath(filePath);
+  const safe = sanitizeWorkspacePath(userId, filePath);
   if (!safe) { res.status(403).json({ error: "path outside workspace" }); return; }
   if (fs.existsSync(safe)) {
     const old = fs.readFileSync(safe, "utf-8");
-    deletedBackups.set(filePath, { content: old, deletedAt: Date.now() });
+    deletedBackups.set(getBackupKey(userId, filePath), { content: old, deletedAt: Date.now() });
   }
   const dir = path.dirname(safe);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -92,35 +115,38 @@ router.put("/workspace/file", (req: Request, res: Response) => {
 });
 
 router.delete("/workspace/file", (req: Request, res: Response) => {
+  const userId = getRequiredUserId(req);
   const filePath = req.query.path as string || req.body?.path;
   if (!filePath) { res.status(400).json({ error: "path required" }); return; }
-  const safe = sanitizeWorkspacePath(filePath);
+  const safe = sanitizeWorkspacePath(userId, filePath);
   if (!safe) { res.status(403).json({ error: "path outside workspace" }); return; }
   if (!fs.existsSync(safe)) { res.status(404).json({ error: "file not found" }); return; }
   const content = fs.readFileSync(safe, "utf-8");
-  deletedBackups.set(filePath, { content, deletedAt: Date.now() });
+  deletedBackups.set(getBackupKey(userId, filePath), { content, deletedAt: Date.now() });
   fs.unlinkSync(safe);
   res.json({ success: true, path: filePath, action: "deleted" });
 });
 
 router.post("/workspace/file/restore", (req: Request, res: Response) => {
+  const userId = getRequiredUserId(req);
   const { path: filePath } = req.body;
   if (!filePath) { res.status(400).json({ error: "path required" }); return; }
-  const backup = deletedBackups.get(filePath);
+  const backup = deletedBackups.get(getBackupKey(userId, filePath));
   if (!backup) { res.status(404).json({ error: "no backup found" }); return; }
-  const safe = sanitizeWorkspacePath(filePath);
+  const safe = sanitizeWorkspacePath(userId, filePath);
   if (!safe) { res.status(403).json({ error: "path outside workspace" }); return; }
   const dir = path.dirname(safe);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(safe, backup.content, "utf-8");
-  deletedBackups.delete(filePath);
+  deletedBackups.delete(getBackupKey(userId, filePath));
   res.json({ success: true, path: filePath, action: "restored" });
 });
 
 router.post("/workspace/directory", (req: Request, res: Response) => {
+  const userId = getRequiredUserId(req);
   const { path: dirPath } = req.body;
   if (!dirPath) { res.status(400).json({ error: "path required" }); return; }
-  const safe = sanitizeWorkspacePath(dirPath);
+  const safe = sanitizeWorkspacePath(userId, dirPath);
   if (!safe) { res.status(403).json({ error: "path outside workspace" }); return; }
   fs.mkdirSync(safe, { recursive: true });
   res.json({ success: true, path: dirPath, action: "created" });

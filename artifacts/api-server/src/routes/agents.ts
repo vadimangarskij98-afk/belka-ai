@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, agentsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { parseStoredStringArray, stringifyStoredStringArray } from "../lib/serialized-arrays";
 
 const router: IRouter = Router();
 
@@ -16,7 +17,7 @@ router.get("/", async (req, res) => {
         role: a.role,
         modelId: a.modelId,
         systemPrompt: a.systemPrompt,
-        capabilities: a.capabilities ? JSON.parse(a.capabilities) : [],
+        capabilities: parseStoredStringArray(a.capabilities),
         isActive: a.isActive,
         memoryEnabled: a.memoryEnabled,
         createdAt: a.createdAt.toISOString(),
@@ -38,7 +39,7 @@ router.post("/", async (req, res) => {
       role: role || "coder",
       modelId,
       systemPrompt,
-      capabilities: capabilities ? JSON.stringify(capabilities) : null,
+      capabilities: stringifyStoredStringArray(capabilities),
       memoryEnabled: memoryEnabled !== false,
     }).returning();
     const a = inserted[0];
@@ -50,7 +51,7 @@ router.post("/", async (req, res) => {
       role: a.role,
       modelId: a.modelId,
       systemPrompt: a.systemPrompt,
-      capabilities: a.capabilities ? JSON.parse(a.capabilities) : [],
+      capabilities: parseStoredStringArray(a.capabilities),
       isActive: a.isActive,
       memoryEnabled: a.memoryEnabled,
       createdAt: a.createdAt.toISOString(),
@@ -77,7 +78,7 @@ router.get("/:id", async (req, res) => {
       role: a.role,
       modelId: a.modelId,
       systemPrompt: a.systemPrompt,
-      capabilities: a.capabilities ? JSON.parse(a.capabilities) : [],
+      capabilities: parseStoredStringArray(a.capabilities),
       isActive: a.isActive,
       memoryEnabled: a.memoryEnabled,
       createdAt: a.createdAt.toISOString(),
@@ -93,12 +94,12 @@ router.put("/:id", async (req, res) => {
     const id = Number(req.params.id);
     const { name, description, avatar, modelId, systemPrompt, capabilities, isActive, memoryEnabled } = req.body;
     const updated = await db.update(agentsTable).set({
-      ...(name && { name }),
-      ...(description && { description }),
-      ...(avatar && { avatar }),
-      ...(modelId && { modelId }),
-      ...(systemPrompt && { systemPrompt }),
-      ...(capabilities && { capabilities: JSON.stringify(capabilities) }),
+      ...(name !== undefined && { name }),
+      ...(description !== undefined && { description }),
+      ...(avatar !== undefined && { avatar }),
+      ...(modelId !== undefined && { modelId }),
+      ...(systemPrompt !== undefined && { systemPrompt }),
+      ...(capabilities !== undefined && { capabilities: stringifyStoredStringArray(capabilities) }),
       ...(isActive !== undefined && { isActive }),
       ...(memoryEnabled !== undefined && { memoryEnabled }),
     }).where(eq(agentsTable.id, id)).returning();
@@ -115,7 +116,7 @@ router.put("/:id", async (req, res) => {
       role: a.role,
       modelId: a.modelId,
       systemPrompt: a.systemPrompt,
-      capabilities: a.capabilities ? JSON.parse(a.capabilities) : [],
+      capabilities: parseStoredStringArray(a.capabilities),
       isActive: a.isActive,
       memoryEnabled: a.memoryEnabled,
       createdAt: a.createdAt.toISOString(),

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { FolderOpen, Folder, File, ChevronRight, ChevronDown, ArrowUp, Check, X, HardDrive, RefreshCw, FileText, FileCode, Image as ImageIcon, FileJson } from "lucide-react";
+import { apiFetch, buildApiUrl, jsonHeaders } from "@/lib/api";
 
 interface FileEntry {
   name: string;
@@ -19,7 +20,7 @@ interface WorkspacePickerProps {
 
 function getFileIcon(name: string) {
   const ext = name.split(".").pop()?.toLowerCase();
-  if (["ts", "tsx", "js", "jsx", "py", "go", "rs", "java", "cpp", "c", "h"].includes(ext || "")) return <FileCode className="w-3.5 h-3.5 text-blue-400/70" />;
+  if (["ts", "tsx", "js", "jsx", "py", "go", "rs", "java", "cpp", "c", "h"].includes(ext || "")) return <FileCode className="w-3.5 h-3.5 text-primary/80" />;
   if (["json", "yaml", "yml", "toml", "xml"].includes(ext || "")) return <FileJson className="w-3.5 h-3.5 text-yellow-400/70" />;
   if (["png", "jpg", "jpeg", "gif", "svg", "webp", "ico"].includes(ext || "")) return <ImageIcon className="w-3.5 h-3.5 text-green-400/70" />;
   if (["md", "txt", "log", "csv"].includes(ext || "")) return <FileText className="w-3.5 h-3.5 text-white/40" />;
@@ -46,7 +47,7 @@ function FileTreeItem({ entry, depth, browsePath, selectedPath }: {
     <div>
       <div
         className={`flex items-center gap-1.5 px-2 py-1 rounded-md cursor-pointer transition-colors group ${
-          isSelected ? "bg-blue-500/20 text-blue-300" : "hover:bg-white/5 text-white/60"
+          isSelected ? "bg-primary/10 text-primary" : "hover:bg-white/5 text-white/60"
         }`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
         onClick={() => {
@@ -59,7 +60,7 @@ function FileTreeItem({ entry, depth, browsePath, selectedPath }: {
         {isDir ? (
           <>
             {expanded ? <ChevronDown className="w-3 h-3 text-white/30 flex-shrink-0" /> : <ChevronRight className="w-3 h-3 text-white/30 flex-shrink-0" />}
-            <Folder className={`w-3.5 h-3.5 flex-shrink-0 ${isSelected ? "text-blue-400" : "text-yellow-400/60"}`} />
+            <Folder className={`w-3.5 h-3.5 flex-shrink-0 ${isSelected ? "text-primary" : "text-yellow-400/60"}`} />
           </>
         ) : (
           <>
@@ -83,7 +84,7 @@ function FileTreeItem({ entry, depth, browsePath, selectedPath }: {
   );
 }
 
-export default function WorkspacePicker({ isOpen, onClose, onSelect, apiBase = "/api" }: WorkspacePickerProps) {
+export default function WorkspacePicker({ isOpen, onClose, onSelect, apiBase = buildApiUrl() }: WorkspacePickerProps) {
   const [currentPath, setCurrentPath] = useState("");
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [selectedDir, setSelectedDir] = useState("");
@@ -93,7 +94,7 @@ export default function WorkspacePicker({ isOpen, onClose, onSelect, apiBase = "
 
   const fetchWorkspace = useCallback(async () => {
     try {
-      const res = await fetch(`${apiBase}/workspace`);
+      const res = await apiFetch(`${apiBase}/workspace`);
       const data = await res.json();
       setCurrentPath(data.path || "");
       setInputPath(data.path || "");
@@ -101,10 +102,13 @@ export default function WorkspacePicker({ isOpen, onClose, onSelect, apiBase = "
     } catch {}
   }, [apiBase]);
 
-  const fetchFiles = useCallback(async () => {
+  const fetchFiles = useCallback(async (path?: string) => {
     setIsLoading(true);
     try {
-      const res = await fetch(`${apiBase}/workspace/files`);
+      const url = path
+        ? `${apiBase}/workspace/files?path=${encodeURIComponent(path)}`
+        : `${apiBase}/workspace/files`;
+      const res = await apiFetch(url);
       const data = await res.json();
       setFiles(data.files || []);
       setBrowsingPath(data.workspace || "");
@@ -121,15 +125,16 @@ export default function WorkspacePicker({ isOpen, onClose, onSelect, apiBase = "
     setSelectedDir(path);
     const fullPath = `${browsingPath}/${path}`;
     setInputPath(fullPath);
+    void fetchFiles(fullPath);
   };
 
   const handleSet = async () => {
     if (!inputPath.trim()) return;
     setIsLoading(true);
     try {
-      const res = await fetch(`${apiBase}/workspace/set`, {
+      const res = await apiFetch(`${apiBase}/workspace/set`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonHeaders(),
         body: JSON.stringify({ path: inputPath.trim() }),
       });
       const data = await res.json();
@@ -142,19 +147,13 @@ export default function WorkspacePicker({ isOpen, onClose, onSelect, apiBase = "
   };
 
   const goUp = async () => {
-    const parts = browsingPath.split("/");
+    const parts = browsingPath.replace(/\\/g, "/").split("/");
     if (parts.length <= 1) return;
     parts.pop();
     const parent = parts.join("/") || "/";
     try {
-      await fetch(`${apiBase}/workspace/set`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: parent }),
-      });
       setInputPath(parent);
-      setBrowsingPath(parent);
-      fetchFiles();
+      await fetchFiles(parent);
     } catch {}
   };
 
@@ -165,11 +164,11 @@ export default function WorkspacePicker({ isOpen, onClose, onSelect, apiBase = "
       <div className="bg-[#0d0d14] border border-white/10 rounded-xl w-full max-w-lg shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 bg-white/5 border-b border-white/10">
           <div className="flex items-center gap-2">
-            <HardDrive className="w-4 h-4 text-blue-400" />
+            <HardDrive className="w-4 h-4 text-primary" />
             <h3 className="text-sm text-white/90 font-semibold">Рабочая директория</h3>
           </div>
           <div className="flex items-center gap-1">
-            <button onClick={() => fetchFiles()} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors">
+            <button onClick={() => fetchFiles(browsingPath)} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors">
               <RefreshCw className={`w-3.5 h-3.5 text-white/40 ${isLoading ? "animate-spin" : ""}`} />
             </button>
             <button onClick={onClose} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors">
@@ -227,7 +226,7 @@ export default function WorkspacePicker({ isOpen, onClose, onSelect, apiBase = "
               onChange={e => setInputPath(e.target.value)}
               onKeyDown={e => e.key === "Enter" && handleSet()}
               placeholder="/home/user/project"
-              className="flex-1 bg-white/5 text-xs text-white/80 px-3 py-2.5 rounded-lg border border-white/10 outline-none font-mono placeholder:text-white/20 focus:border-blue-500/50 transition-colors"
+              className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 font-mono text-xs text-white/80 outline-none transition-colors placeholder:text-white/20 focus:border-primary/50"
             />
           </div>
 
@@ -238,7 +237,7 @@ export default function WorkspacePicker({ isOpen, onClose, onSelect, apiBase = "
             <button
               onClick={handleSet}
               disabled={isLoading || !inputPath.trim()}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-500/20 text-blue-400 text-xs rounded-lg hover:bg-blue-500/30 transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 rounded-lg bg-primary/10 px-4 py-2 text-xs text-primary transition-colors hover:bg-primary/20 disabled:opacity-50"
             >
               <FolderOpen className="w-3.5 h-3.5" />
               {isLoading ? "Настройка..." : "Установить"}

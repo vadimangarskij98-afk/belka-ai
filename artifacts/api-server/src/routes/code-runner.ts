@@ -4,8 +4,7 @@ import { writeFile, unlink, mkdir } from "fs/promises";
 import { join } from "path";
 import { randomUUID } from "crypto";
 import { tmpdir } from "os";
-import jwt from "jsonwebtoken";
-import { JWT_SECRET } from "../config";
+import { getSessionUserId } from "../lib/auth-session";
 
 const router: IRouter = Router();
 
@@ -45,14 +44,11 @@ function truncate(str: string, max: number): string {
 }
 
 function requireAuth(req: any, res: any, next: any): void {
-  try {
-    const token = req.headers.authorization?.split(" ")[1];
-    if (!token) { res.status(401).json({ error: "Unauthorized" }); return; }
-    jwt.verify(token, JWT_SECRET);
-    next();
-  } catch {
-    res.status(401).json({ error: "Invalid token" });
+  if (!getSessionUserId(req)) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
   }
+  next();
 }
 
 async function runInSandbox(

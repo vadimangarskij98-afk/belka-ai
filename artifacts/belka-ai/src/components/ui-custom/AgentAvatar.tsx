@@ -12,33 +12,33 @@ interface AgentAvatarProps {
 
 const roleConfig: Record<string, { gradient: string; ring: string; shadow: string; icon: typeof Bot }> = {
   [AgentRole.coder]: {
-    gradient: "from-blue-500 to-cyan-400",
-    ring: "border-blue-500/60",
-    shadow: "shadow-blue-500/30",
+    gradient: "from-[#2EA043] to-[#8AC234]",
+    ring: "border-[#2EA043]/60",
+    shadow: "shadow-[#2EA043]/30",
     icon: Code2,
   },
   [AgentRole.reviewer]: {
-    gradient: "from-red-500 to-orange-400",
-    ring: "border-red-500/60",
-    shadow: "shadow-red-500/30",
+    gradient: "from-[#F97316] to-[#F59E0B]",
+    ring: "border-[#F97316]/60",
+    shadow: "shadow-[#F97316]/30",
     icon: Bot,
   },
   [AgentRole.researcher]: {
-    gradient: "from-green-500 to-emerald-400",
-    ring: "border-green-500/60",
-    shadow: "shadow-green-500/30",
+    gradient: "from-[#8AC234] to-[#2EA043]",
+    ring: "border-[#8AC234]/55",
+    shadow: "shadow-[#8AC234]/25",
     icon: Search,
   },
   [AgentRole.designer]: {
-    gradient: "from-purple-500 to-pink-400",
-    ring: "border-purple-500/60",
-    shadow: "shadow-purple-500/30",
+    gradient: "from-[#C084FC] to-[#E879F9]",
+    ring: "border-[#C084FC]/60",
+    shadow: "shadow-[#C084FC]/30",
     icon: Palette,
   },
   [AgentRole.orchestrator]: {
-    gradient: "from-yellow-500 to-amber-400",
-    ring: "border-yellow-500/60",
-    shadow: "shadow-yellow-500/30",
+    gradient: "from-[#F97316] to-[#C084FC]",
+    ring: "border-[#F97316]/60",
+    shadow: "shadow-[#F97316]/25",
     icon: Network,
   },
 };

@@ -10,13 +10,13 @@ interface DocSection {
 }
 
 const sections: DocSection[] = [
-  { icon: BookOpen, color: "text-blue-400", titleKey: "docIntro", textKey: "docIntroText" },
+  { icon: BookOpen, color: "text-primary", titleKey: "docIntro", textKey: "docIntroText" },
   { icon: Zap, color: "text-green-400", titleKey: "docGettingStarted", textKey: "docGettingStartedText" },
   { icon: Layers, color: "text-yellow-400", titleKey: "docModes", textKey: "docModesText" },
-  { icon: Network, color: "text-purple-400", titleKey: "docAgents", textKey: "docAgentsText" },
+  { icon: Network, color: "text-secondary", titleKey: "docAgents", textKey: "docAgentsText" },
   { icon: Mic, color: "text-orange-400", titleKey: "docVoice", textKey: "docVoiceText" },
-  { icon: Github, color: "text-cyan-400", titleKey: "docGithub", textKey: "docGithubText" },
-  { icon: Keyboard, color: "text-pink-400", titleKey: "docKeyboard", textKey: "docKeyboardText" },
+  { icon: Github, color: "text-foreground", titleKey: "docGithub", textKey: "docGithubText" },
+  { icon: Keyboard, color: "text-accent", titleKey: "docKeyboard", textKey: "docKeyboardText" },
   { icon: ShieldCheck, color: "text-emerald-400", titleKey: "docSecurity", textKey: "docSecurityText" },
 ];
 

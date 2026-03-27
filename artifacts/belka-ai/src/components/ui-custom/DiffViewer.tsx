@@ -16,13 +16,13 @@ export function DiffViewer({ path, oldContent, newContent, onClose }: DiffViewer
     ? "text-green-400"
     : diff.status === "deleted"
     ? "text-red-400"
-    : "text-blue-400";
+    : "text-primary";
 
   const statusIcon = diff.status === "added"
     ? <Plus size={12} className="text-green-400" />
     : diff.status === "deleted"
     ? <Minus size={12} className="text-red-400" />
-    : <FileCode size={12} className="text-blue-400" />;
+    : <FileCode size={12} className="text-primary" />;
 
   const statusLabel = diff.status === "added" ? "добавлен" : diff.status === "deleted" ? "удалён" : "изменён";
 

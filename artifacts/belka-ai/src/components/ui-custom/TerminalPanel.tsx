@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { TerminalSquare, X, Maximize2, Minimize2, Loader2, GripHorizontal } from "lucide-react";
+import { apiFetch, buildApiUrl, jsonHeaders } from "@/lib/api";
 
 interface TerminalLine {
   type: "input" | "output" | "error" | "system";
@@ -13,7 +14,7 @@ interface TerminalPanelProps {
   apiBase?: string;
 }
 
-export default function TerminalPanel({ isOpen, onClose, apiBase = "/api" }: TerminalPanelProps) {
+export default function TerminalPanel({ isOpen, onClose, apiBase = buildApiUrl() }: TerminalPanelProps) {
   const [lines, setLines] = useState<TerminalLine[]>([
     { type: "system", content: "BELKA Terminal v1.0 — готов к работе", timestamp: Date.now() },
     { type: "system", content: 'Введите команду. Для справки — "help"', timestamp: Date.now() },
@@ -43,9 +44,9 @@ export default function TerminalPanel({ isOpen, onClose, apiBase = "/api" }: Ter
 
   useEffect(() => {
     if (!isOpen || sessionId) return;
-    fetch(`${apiBase}/terminal/create`, {
+    apiFetch(`${apiBase}/terminal/create`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders(),
       body: JSON.stringify({}),
     })
       .then(r => r.json())
@@ -104,9 +105,9 @@ export default function TerminalPanel({ isOpen, onClose, apiBase = "/api" }: Ter
         ? `${apiBase}/terminal/${sessionId}/write`
         : `${apiBase}/terminal/exec`;
 
-      const res = await fetch(endpoint, {
+      const res = await apiFetch(endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonHeaders(),
         body: JSON.stringify({ command }),
       });
 
@@ -153,7 +154,7 @@ export default function TerminalPanel({ isOpen, onClose, apiBase = "/api" }: Ter
       case "input": return "text-emerald-400";
       case "output": return "text-white/80";
       case "error": return "text-red-400";
-      case "system": return "text-blue-400/70";
+      case "system": return "text-secondary/80";
       default: return "text-white/60";
     }
   };
@@ -209,7 +210,7 @@ export default function TerminalPanel({ isOpen, onClose, apiBase = "/api" }: Ter
 
       <div className="flex items-center gap-2 px-3 py-2 border-t border-white/10 bg-white/[0.02]">
         <span className="text-emerald-500 font-mono text-sm">❯</span>
-        {isExecuting && <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin" />}
+        {isExecuting && <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />}
         <input
           ref={inputRef}
           value={input}

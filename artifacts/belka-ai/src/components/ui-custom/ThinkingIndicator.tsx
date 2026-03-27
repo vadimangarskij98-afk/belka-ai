@@ -53,7 +53,7 @@ export default function ThinkingIndicator({ steps, elapsedMs, isActive }: Thinki
           <div key={step.id + i} className="flex items-center gap-2.5 text-sm">
             <div className={`flex items-center justify-center w-5 h-5 rounded-full ${
               step.status === "done" ? "bg-emerald-500/20 text-emerald-400" :
-              step.status === "active" ? "bg-blue-500/20 text-blue-400" :
+      step.status === "active" ? "bg-primary/10 text-primary" :
               "bg-white/5 text-white/30"
             }`}>
               {step.status === "done" ? (
@@ -75,7 +75,7 @@ export default function ThinkingIndicator({ steps, elapsedMs, isActive }: Thinki
               <span className="text-white/30 text-xs ml-auto font-mono">{formatTime(step.duration)}</span>
             )}
             {step.status === "active" && isLast && isActive && (
-              <span className="text-blue-400/70 text-xs ml-auto font-mono animate-pulse">
+              <span className="ml-auto text-xs font-mono text-primary/70 animate-pulse">
                 {formatTime(displayTime)}
               </span>
             )}

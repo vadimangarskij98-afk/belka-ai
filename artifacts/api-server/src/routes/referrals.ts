@@ -1,19 +1,13 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import jwt from "jsonwebtoken";
 import { db, usersTable, referralsTable, referralSettingsTable } from "@workspace/db";
 import { eq, and, count } from "drizzle-orm";
 import crypto from "crypto";
-import { JWT_SECRET } from "../config";
+import { getSessionUserId } from "../lib/auth-session";
 
 const router: IRouter = Router();
 
 function getUserId(req: Request): number | null {
-  try {
-    const token = req.headers.authorization?.split(" ")[1];
-    if (!token) return null;
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: number };
-    return decoded.id;
-  } catch { return null; }
+  return getSessionUserId(req);
 }
 
 function generateReferralCode(): string {

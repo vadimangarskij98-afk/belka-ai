@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Server, X, RefreshCw, Play, Square, Maximize2, Minimize2, Loader2, ExternalLink, GripHorizontal } from "lucide-react";
+import { apiFetch, buildApiUrl, jsonHeaders } from "@/lib/api";
 
 interface PreviewLog {
   text: string;
@@ -12,7 +13,7 @@ interface PreviewStatusPopupProps {
   apiBase?: string;
 }
 
-export default function PreviewStatusPopup({ isOpen, onClose, apiBase = "/api" }: PreviewStatusPopupProps) {
+export default function PreviewStatusPopup({ isOpen, onClose, apiBase = buildApiUrl() }: PreviewStatusPopupProps) {
   const [status, setStatus] = useState<"stopped" | "starting" | "running" | "error">("stopped");
   const [logs, setLogs] = useState<PreviewLog[]>([]);
   const [port, setPort] = useState<number | null>(null);
@@ -31,7 +32,7 @@ export default function PreviewStatusPopup({ isOpen, onClose, apiBase = "/api" }
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch(`${apiBase}/preview/status`);
+      const res = await apiFetch(`${apiBase}/preview/status`);
       const data = await res.json();
       setStatus(data.running ? data.status : "stopped");
       setPort(data.port || null);
@@ -78,9 +79,9 @@ export default function PreviewStatusPopup({ isOpen, onClose, apiBase = "/api" }
 
   const startServer = async () => {
     try {
-      await fetch(`${apiBase}/preview/start`, {
+      await apiFetch(`${apiBase}/preview/start`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonHeaders(),
         body: JSON.stringify({ command: customCommand || undefined }),
       });
       setStatus("starting");
@@ -90,7 +91,7 @@ export default function PreviewStatusPopup({ isOpen, onClose, apiBase = "/api" }
 
   const stopServer = async () => {
     try {
-      await fetch(`${apiBase}/preview/stop`, { method: "POST" });
+      await apiFetch(`${apiBase}/preview/stop`, { method: "POST" });
       setStatus("stopped");
     } catch {}
   };
@@ -133,7 +134,7 @@ export default function PreviewStatusPopup({ isOpen, onClose, apiBase = "/api" }
       >
         <div className="flex items-center gap-2">
           <GripHorizontal className="w-3.5 h-3.5 text-white/20" />
-          <Server className="w-4 h-4 text-blue-400" />
+          <Server className="w-4 h-4 text-primary" />
           <span className="text-sm text-white/80 font-medium">Preview Server</span>
           <div className={`w-2 h-2 rounded-full ml-1 ${
             isRunning ? "bg-emerald-400 animate-pulse" :
@@ -149,7 +150,7 @@ export default function PreviewStatusPopup({ isOpen, onClose, apiBase = "/api" }
         </div>
         <div className="flex items-center gap-1">
           {isRunning && (
-            <button onClick={() => setShowLogs(!showLogs)} className={`p-1.5 rounded-md transition-colors text-[10px] font-medium ${showLogs ? "bg-blue-500/20 text-blue-400" : "hover:bg-white/10 text-white/40"} ${hasErrors ? "text-red-400" : ""}`}>
+            <button onClick={() => setShowLogs(!showLogs)} className={`p-1.5 rounded-md transition-colors text-[10px] font-medium ${showLogs ? "bg-primary/10 text-primary" : "hover:bg-white/10 text-white/40"} ${hasErrors ? "text-red-400" : ""}`}>
               Логи{hasErrors ? " ⚠" : ""}
             </button>
           )}
@@ -192,7 +193,7 @@ export default function PreviewStatusPopup({ isOpen, onClose, apiBase = "/api" }
           </>
         ) : isStarting ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-3">
-            <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+            <Loader2 className="w-8 h-8 text-primary animate-spin" />
             <p className="text-sm text-white/50">Запуск сервера...</p>
             {command && <code className="text-xs text-white/30 font-mono">{command}</code>}
           </div>
@@ -208,7 +209,7 @@ export default function PreviewStatusPopup({ isOpen, onClose, apiBase = "/api" }
                 onChange={e => setCustomCommand(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && startServer()}
                 placeholder="npm run dev"
-                className="w-full bg-white/5 text-sm text-white/80 px-4 py-3 rounded-lg border border-white/10 outline-none font-mono placeholder:text-white/20 focus:border-blue-500/50 transition-colors"
+                className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 font-mono text-sm text-white/80 outline-none transition-colors placeholder:text-white/20 focus:border-primary/50"
               />
               <button
                 onClick={startServer}
@@ -235,7 +236,7 @@ export default function PreviewStatusPopup({ isOpen, onClose, apiBase = "/api" }
         <div className="flex items-center justify-between px-3 py-1.5 border-t border-white/10 bg-white/[0.02]">
           <div className="flex items-center gap-2 text-[10px] text-white/30 font-mono">
             {command && <span>{command}</span>}
-            {port && <span className="text-blue-400/60">:{port}</span>}
+            {port && <span className="text-primary/70">:{port}</span>}
           </div>
           <div className="flex items-center gap-1.5">
             <button onClick={() => { setIframeKey(k => k + 1); fetchStatus(); }} className="flex items-center gap-1 px-2 py-1 bg-white/5 text-white/40 rounded text-[10px] hover:bg-white/10 transition-colors">

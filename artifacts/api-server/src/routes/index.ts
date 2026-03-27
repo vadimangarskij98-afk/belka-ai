@@ -1,5 +1,4 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
-import jwt from "jsonwebtoken";
 import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
@@ -28,37 +27,67 @@ import terminalRouter from "./terminal";
 import gitRouter from "./git";
 import previewRouter from "./preview";
 import referralsRouter from "./referrals";
-import { BELKA_CODER_API_BASE_URL, JWT_SECRET, normalizeBelkaMode } from "../config";
+import { BELKA_CODER_API_BASE_URL, ENABLE_PROJECT_TOOLS, normalizeBelkaMode } from "../config";
+import { getSessionUserId } from "../lib/auth-session";
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
-  try {
-    const token = req.headers.authorization?.split(" ")[1];
-    if (!token) { res.status(401).json({ error: "Unauthorized" }); return; }
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: number };
-    req.userId = decoded.id;
-    next();
-  } catch {
-    res.status(401).json({ error: "Invalid token" });
-  }
+  const userId = getSessionUserId(req);
+  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  req.userId = userId;
+  next();
 }
 
 async function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  try {
-    const token = req.headers.authorization?.split(" ")[1];
-    if (!token) { res.status(401).json({ error: "Unauthorized" }); return; }
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: number };
-    const users = await db.select().from(usersTable).where(eq(usersTable.id, decoded.id)).limit(1);
-    if (users.length === 0 || users[0].role !== "admin") {
-      res.status(403).json({ error: "Forbidden: admin access required" }); return;
-    }
-    req.userId = decoded.id;
-    next();
-  } catch {
-    res.status(401).json({ error: "Invalid token" });
+  const userId = getSessionUserId(req);
+  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  const users = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (users.length === 0 || users[0].role !== "admin") {
+    res.status(403).json({ error: "Forbidden: admin access required" }); return;
   }
+  req.userId = userId;
+  next();
+}
+
+function requireProjectToolsEnabled(_req: Request, res: Response, next: NextFunction) {
+  if (!ENABLE_PROJECT_TOOLS) {
+    res.status(403).json({ error: "Project execution tools are disabled on this deployment" });
+    return;
+  }
+
+  next();
 }
 
 const router: IRouter = Router();
+
+async function readJsonSafely(response: globalThis.Response): Promise<unknown> {
+  const raw = await response.text();
+  if (!raw.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return { error: raw.trim() };
+  }
+}
+
+async function fetchBelkaChat(payload: unknown) {
+  const requestInit: RequestInit = {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(120000),
+  };
+
+  let response = await fetch(`${BELKA_CODER_API_BASE_URL}/chat`, requestInit);
+  if (response.status === 503) {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    response = await fetch(`${BELKA_CODER_API_BASE_URL}/chat`, requestInit);
+  }
+
+  return response;
+}
 
 router.use(healthRouter);
 router.use("/auth", authRouter);
@@ -66,19 +95,15 @@ router.use("/conversations", requireAuth, conversationsRouter);
 router.use("/agents", requireAdmin, agentsRouter);
 router.use("/admin", requireAdmin, adminRouter);
 router.use("/voice", requireAuth, voiceRouter);
-router.use("/mcp", requireAuth, mcpRouter);
+router.use("/mcp", requireAdmin, requireProjectToolsEnabled, mcpRouter);
 router.use("/memory", requireAuth, memoryRouter);
-router.use("/repositories", requireAuth, repositoriesRouter);
+router.use("/repositories", requireAdmin, requireProjectToolsEnabled, repositoriesRouter);
 router.use("/search", requireAuth, searchRouter);
 router.use("/github", requireAuth, githubRouter);
 router.use("/uploads", requireAuth, uploadsRouter);
-router.use("/code", requireAuth, codeRunnerRouter);
+router.use("/code", requireAdmin, requireProjectToolsEnabled, codeRunnerRouter);
 router.use("/subscriptions", subscriptionsRouter);
 router.use("/referrals", referralsRouter);
-router.use(requireAuth, workspaceRouter);
-router.use(requireAuth, terminalRouter);
-router.use(requireAuth, gitRouter);
-router.use(requireAuth, previewRouter);
 
 router.post("/belka/chat", requireAuth, async (req: Request, res: Response) => {
   try {
@@ -91,13 +116,8 @@ router.post("/belka/chat", requireAuth, async (req: Request, res: Response) => {
       system_prompt: req.body?.system_prompt ?? req.body?.systemPrompt,
     };
 
-    const response = await fetch(`${BELKA_CODER_API_BASE_URL}/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(120000),
-    });
-    const data = await response.json();
+    const response = await fetchBelkaChat(payload);
+    const data = await readJsonSafely(response);
     if (!response.ok) { res.status(response.status).json(data); return; }
     res.json(data);
   } catch (err: any) {
@@ -106,5 +126,9 @@ router.post("/belka/chat", requireAuth, async (req: Request, res: Response) => {
 });
 
 router.use("/", sharedRouter);
+router.use(requireAdmin, requireProjectToolsEnabled, workspaceRouter);
+router.use(requireAdmin, requireProjectToolsEnabled, terminalRouter);
+router.use(requireAdmin, requireProjectToolsEnabled, gitRouter);
+router.use(requireAdmin, requireProjectToolsEnabled, previewRouter);
 
 export default router;

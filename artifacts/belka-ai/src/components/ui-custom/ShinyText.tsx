@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 interface ShinyTextProps {
   children: ReactNode;
   className?: string;
-  variant?: "default" | "blue";
+  variant?: "default" | "accent";
   as?: "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p" | "span" | "div";
 }
 
@@ -17,7 +17,7 @@ export function ShinyText({
   return (
     <Component 
       className={cn(
-        variant === "default" ? "shiny-text" : "shiny-text-blue",
+        variant === "default" ? "shiny-text" : "shiny-text-accent",
         className
       )}
     >

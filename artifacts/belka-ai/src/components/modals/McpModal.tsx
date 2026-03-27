@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { apiFetch, jsonHeaders } from "@/lib/api";
 import { t } from "@/lib/i18n";
 
 interface McpCatalogEntry {
@@ -68,15 +69,6 @@ const iconMap: Record<string, React.ComponentType<{ size?: number; className?: s
   brain: Brain,
 };
 
-function getAuthHeaders() {
-  const token = window.localStorage.getItem("belka-token") || "";
-  const headers: Record<string, string> = {};
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  return headers;
-}
-
 function getWorkspacePath(): string {
   return window.localStorage.getItem("belka-workspace-path") || "";
 }
@@ -120,8 +112,8 @@ export function McpModal({ open, onClose }: { open: boolean; onClose: () => void
 
     try {
       const [catalogRes, serversRes] = await Promise.all([
-        fetch(`${apiBase}/mcp/catalog`, { headers: getAuthHeaders() }),
-        fetch(`${apiBase}/mcp/servers`, { headers: getAuthHeaders() }),
+        apiFetch(`${apiBase}/mcp/catalog`),
+        apiFetch(`${apiBase}/mcp/servers`),
       ]);
 
       const [catalogData, serversData] = await Promise.all([
@@ -175,12 +167,9 @@ export function McpModal({ open, onClose }: { open: boolean; onClose: () => void
     setError("");
 
     try {
-      const response = await fetch(`${apiBase}/mcp/servers/connect`, {
+      const response = await apiFetch(`${apiBase}/mcp/servers/connect`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...getAuthHeaders(),
-        },
+        headers: jsonHeaders(),
         body: JSON.stringify(payload),
       });
 
@@ -202,9 +191,8 @@ export function McpModal({ open, onClose }: { open: boolean; onClose: () => void
     setError("");
 
     try {
-      const response = await fetch(`${apiBase}/mcp/servers/${encodeURIComponent(serverId)}/disconnect`, {
+      const response = await apiFetch(`${apiBase}/mcp/servers/${encodeURIComponent(serverId)}/disconnect`, {
         method: "POST",
-        headers: getAuthHeaders(),
       });
       const data = await readJsonSafe(response);
       if (!response.ok) {

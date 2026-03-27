@@ -7,7 +7,7 @@ import { t } from "@/lib/i18n";
 const sections = [
   {
     icon: BookOpen,
-    color: "text-blue-400",
+    color: "text-primary",
     titleKey: "docIntro" as const,
     textKey: "docIntroText" as const,
   },
@@ -19,7 +19,7 @@ const sections = [
   },
   {
     icon: Network,
-    color: "text-purple-400",
+    color: "text-secondary",
     titleKey: "docAgents" as const,
     textKey: "docAgentsText" as const,
   },
@@ -31,7 +31,7 @@ const sections = [
   },
   {
     icon: Github,
-    color: "text-cyan-400",
+    color: "text-foreground",
     titleKey: "docGithub" as const,
     textKey: "docGithubText" as const,
   },

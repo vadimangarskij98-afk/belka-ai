@@ -3,8 +3,11 @@ import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import pinoHttp from "pino-http";
+import cookieParser from "cookie-parser";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { hasValidCsrfToken, setCsrfCookie } from "./lib/auth-session";
+import { IS_PRODUCTION } from "./config";
 
 const app: Express = express();
 
@@ -16,19 +19,26 @@ app.use(helmet({
 }));
 
 const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(",").map(o => o.trim())
-  : null;
+  ? process.env.ALLOWED_ORIGINS.split(",").map(o => o.trim()).filter(Boolean)
+  : (IS_PRODUCTION ? [] : ["http://localhost:5173", "http://127.0.0.1:5173"]);
+
+function isOriginAllowed(origin?: string): boolean {
+  if (!origin) {
+    return true;
+  }
+
+  return allowedOrigins.includes(origin);
+}
 
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
-    if (!allowedOrigins) return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
+    if (isOriginAllowed(origin)) return callback(null, true);
     callback(new Error("CORS not allowed"));
   },
-  credentials: !!allowedOrigins,
+  credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"],
 }));
 
 const globalLimiter = rateLimit({
@@ -95,6 +105,31 @@ app.use(
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use(cookieParser());
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (!req.cookies?.belka_csrf) {
+    setCsrfCookie(res);
+  }
+
+  if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
+    next();
+    return;
+  }
+
+  const origin = req.headers.origin;
+  if (origin && !isOriginAllowed(origin)) {
+    res.status(403).json({ error: "Origin not allowed" });
+    return;
+  }
+
+  if (!hasValidCsrfToken(req)) {
+    res.status(403).json({ error: "Invalid CSRF token" });
+    return;
+  }
+
+  next();
+});
 
 app.disable("x-powered-by");
 

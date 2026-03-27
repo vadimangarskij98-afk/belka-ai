@@ -27,6 +27,7 @@ const MODEL_CONFIG = {
   reviewer: "google/gemini-2.5-flash",
   researcher: "google/gemini-2.0-flash-001",
 } as const;
+const BELKA_CODER_TIMEOUT_MS = 120_000;
 
 function getOpenRouterKey(): string {
   return process.env.OPENROUTER_API_KEY || "";
@@ -105,7 +106,7 @@ async function callBelkaCoder(
         temperature,
         max_tokens: maxTokens,
       }),
-      signal: AbortSignal.timeout(60000),
+      signal: AbortSignal.timeout(BELKA_CODER_TIMEOUT_MS),
     });
 
     if (response.ok) {
@@ -1046,13 +1047,13 @@ router.post("/:id/messages", async (req, res) => {
     const thinkingEnd = Date.now();
     sendSSE(res, "thinking_end", { duration: thinkingEnd - thinkingStart });
 
-    const WORKSPACE = getWorkspace();
+    const WORKSPACE = getWorkspace(userId);
     if (fs.existsSync(WORKSPACE)) {
       const fileOps = extractFileOperations(aiContent);
       for (const op of fileOps) {
         sendSSE(res, "tool_call", { tool: op.action, args: { path: op.filePath, language: op.language }, status: "running" });
         try {
-          const safePath = sanitizeWorkspacePath(op.filePath);
+          const safePath = sanitizeWorkspacePath(userId, op.filePath);
           if (safePath) {
             const dir = path.dirname(safePath);
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });

@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { AdminLayout } from "./Layout";
-import { BrainCircuit, CheckCircle, Loader2, Mic, Save, Volume2, Waves, ShieldCheck } from "lucide-react";
+import { BrainCircuit, CheckCircle2, Loader2, Mic, Save, ShieldCheck, Volume2, Waves } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { apiFetch, buildApiUrl, jsonHeaders } from "@/lib/api";
 import {
   getVoiceAssistantConfig,
+  loadVoiceAssistantConfig,
   saveVoiceAssistantConfig,
   type VoiceAssistantConfig,
 } from "@/lib/voice-config";
+import { VOICE_TEST_SAMPLE_TEXT } from "@/lib/voice-copy";
 
 interface VoiceProviderInfo {
   id: string;
@@ -36,30 +39,64 @@ interface VoiceProvidersResponse {
   presets: VoicePresetInfo[];
 }
 
-function getAuthHeaders() {
-  const token = window.localStorage.getItem("belka-token") || "";
-  const headers: Record<string, string> = {};
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  return headers;
-}
-
-function Toggle({
-  checked,
-  onChange,
-}: {
-  checked: boolean;
-  onChange: () => void;
-}) {
+function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
   return (
     <button
       type="button"
       onClick={onChange}
-      className={`w-11 h-6 rounded-full transition-all relative ${checked ? "bg-primary" : "bg-muted"}`}
+      className={`relative h-7 w-12 rounded-full border transition-all ${
+        checked ? "border-primary/40 bg-primary/20" : "border-border bg-muted/70"
+      }`}
     >
-      <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-all ${checked ? "left-6" : "left-1"}`} />
+      <span
+        className={`absolute top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-background shadow-md transition-all ${
+          checked ? "left-6" : "left-1"
+        }`}
+      />
     </button>
+  );
+}
+
+function SliderRow({
+  label,
+  hint,
+  value,
+  min,
+  max,
+  step,
+  suffix,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  suffix?: string;
+  onChange: (nextValue: number) => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium text-foreground">{label}</div>
+          <div className="text-xs text-muted-foreground">{hint}</div>
+        </div>
+        <div className="rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+          {value}{suffix ?? ""}
+        </div>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="w-full accent-[hsl(var(--primary))]"
+      />
+    </div>
   );
 }
 
@@ -69,32 +106,38 @@ export default function AdminVoiceAssistant() {
   const [health, setHealth] = useState<VoiceHealthResponse | null>(null);
   const [providersData, setProvidersData] = useState<VoiceProvidersResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [testingVoice, setTestingVoice] = useState(false);
   const [testingAgent, setTestingAgent] = useState(false);
   const [testResult, setTestResult] = useState("");
 
-  const apiBase = useMemo(() => `${(import.meta.env.BASE_URL || "/")}api`.replace(/\/\/+/g, "/"), []);
+  const apiBase = useMemo(() => buildApiUrl(), []);
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
       setLoading(true);
+
       try {
-        const [healthRes, providersRes] = await Promise.all([
-          fetch(`${apiBase}/voice/health`, { headers: getAuthHeaders() }),
-          fetch(`${apiBase}/voice/providers`, { headers: getAuthHeaders() }),
+        const [healthRes, providersRes, settings] = await Promise.all([
+          apiFetch(`${apiBase}/voice/health`),
+          apiFetch(`${apiBase}/voice/providers`),
+          loadVoiceAssistantConfig(true),
         ]);
 
-        if (!cancelled) {
-          const nextHealth = await healthRes.json();
-          const nextProviders = await providersRes.json();
-          setHealth(nextHealth);
-          setProvidersData(nextProviders);
+        if (cancelled) {
+          return;
         }
+
+        const nextHealth = await healthRes.json();
+        const nextProviders = await providersRes.json();
+        setHealth(nextHealth);
+        setProvidersData(nextProviders);
+        setConfig(settings);
       } catch (error) {
         if (!cancelled) {
-          setTestResult(error instanceof Error ? error.message : "Не удалось загрузить настройки голоса");
+          setTestResult(error instanceof Error ? error.message : "Failed to load voice settings");
         }
       } finally {
         if (!cancelled) {
@@ -104,45 +147,56 @@ export default function AdminVoiceAssistant() {
     }
 
     void load();
+
     return () => {
       cancelled = true;
     };
   }, [apiBase]);
 
-  const handleSave = () => {
-    saveVoiceAssistantConfig(config);
-    toast({
-      title: "Настройки сохранены",
-      description: "Голосовой ассистент будет использовать новые параметры сразу.",
-    });
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const saved = await saveVoiceAssistantConfig(config);
+      setConfig(saved);
+      toast({
+        title: "Voice profile saved",
+        description: "The new voice defaults are now active across the product.",
+      });
+    } catch (error) {
+      toast({
+        title: "Save failed",
+        description: error instanceof Error ? error.message : "Could not save voice settings.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleTestVoice = async () => {
     setTestingVoice(true);
     setTestResult("");
+
     try {
-      const response = await fetch(`${apiBase}/voice/synthesize`, {
+      const response = await apiFetch(`${apiBase}/voice/synthesize`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...getAuthHeaders(),
-        },
+        headers: jsonHeaders(),
         body: JSON.stringify({
-          text: "BELKA готова к работе. Голосовой контур активен и ждёт команд по проекту.",
+          text: VOICE_TEST_SAMPLE_TEXT,
           provider: config.provider,
           preset: config.preset,
         }),
       });
       const data = await response.json();
       if (!response.ok || !data.audioUrl) {
-        throw new Error(data.error || "Не удалось получить аудио");
+        throw new Error(data.error || "No audio returned from the provider");
       }
 
       const audio = new Audio(data.audioUrl);
       await audio.play();
-      setTestResult(`Голос работает через ${data.providerUsed} / ${data.presetUsed}.`);
+      setTestResult(`Voice path OK via ${data.providerUsed} / ${data.presetUsed}.`);
     } catch (error) {
-      setTestResult(error instanceof Error ? error.message : "Не удалось проверить голос");
+      setTestResult(error instanceof Error ? error.message : "Could not run voice test");
     } finally {
       setTestingVoice(false);
     }
@@ -151,25 +205,24 @@ export default function AdminVoiceAssistant() {
   const handleTestAgent = async () => {
     setTestingAgent(true);
     setTestResult("");
+
     try {
-      const response = await fetch(`${apiBase}/belka/chat`, {
+      const response = await apiFetch(`${apiBase}/belka/chat`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...getAuthHeaders(),
-        },
+        headers: jsonHeaders(),
         body: JSON.stringify({
-          message: "Кто ты и чем можешь помочь в проекте? Ответь коротко и по делу.",
+          message: "Introduce yourself in one short line and say how you help inside the project.",
           mode: "chat",
         }),
       });
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || "BELKA не ответила");
+        throw new Error(data.error || "BELKA did not return a response");
       }
-      setTestResult(data.reply || "BELKA ответила без текста.");
+
+      setTestResult(data.reply || "BELKA replied without visible text.");
     } catch (error) {
-      setTestResult(error instanceof Error ? error.message : "Не удалось проверить ответ агента");
+      setTestResult(error instanceof Error ? error.message : "Could not test BELKA response");
     } finally {
       setTestingAgent(false);
     }
@@ -177,223 +230,236 @@ export default function AdminVoiceAssistant() {
 
   return (
     <AdminLayout>
-      <div className="mb-8">
-        <h1 className="text-3xl font-display font-bold text-foreground mb-2">Голосовой ассистент</h1>
+      <div className="mb-8 max-w-3xl">
+        <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+          <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+          Global voice profile
+        </div>
+        <h1 className="mb-2 text-3xl font-display font-bold text-foreground">Voice Assistant Control</h1>
         <p className="text-muted-foreground">
-          Управление голосом, защитой от самопрослушивания и тем, как BELKA озвучивает ответы в проекте.
+          Manage the shared BELKA voice profile, dictation behavior, echo guard, and the default spoken experience
+          used across chat, agent updates, and project navigation.
         </p>
       </div>
 
       <div className="space-y-6">
-        <div className="glass-panel rounded-2xl p-6 border border-border">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-              <Waves size={20} className="text-primary" />
+        <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+          <section className="glass-panel rounded-[28px] border border-border p-6">
+            <div className="mb-5 flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/12 text-primary">
+                <Waves size={20} />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">Providers and health</h2>
+                <p className="text-xs text-muted-foreground">
+                  Backend status for remote TTS providers. No browser secrets are trusted here.
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-lg font-semibold text-foreground">Провайдеры голоса</h3>
-              <p className="text-xs text-muted-foreground">Backend проверяет реальные voice-provider endpoints, а не локальные ключи браузера.</p>
-            </div>
-          </div>
 
-          {loading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 size={16} className="animate-spin" />
-              Загружаю состояние голосового контура...
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {(health?.providers || []).map((provider) => (
-                <div key={provider.id} className="rounded-2xl border border-border bg-background/70 p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="font-medium text-foreground">{provider.name}</div>
-                    <span className={`text-xs px-2 py-1 rounded-full border ${provider.configured ? "border-green-500/30 text-green-500 bg-green-500/10" : "border-amber-500/30 text-amber-500 bg-amber-500/10"}`}>
-                      {provider.configured ? "Настроен" : "Не настроен"}
-                    </span>
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    {provider.reachable ? "Endpoint отвечает и доступен для синтеза." : "Провайдер пока не подтверждён живым health-check."}
-                  </div>
-                  {provider.default && (
-                    <div className="mt-3 inline-flex items-center gap-1 text-xs text-primary">
-                      <CheckCircle size={12} />
-                      Провайдер по умолчанию
+            {loading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 size={16} className="animate-spin" />
+                Loading provider status...
+              </div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {(health?.providers || []).map((provider) => (
+                  <div key={provider.id} className="rounded-2xl border border-border/70 bg-background/70 p-4">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div className="font-medium text-foreground">{provider.name}</div>
+                      <span
+                        className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${
+                          provider.configured
+                            ? "border-primary/20 bg-primary/10 text-primary"
+                            : "border-orange-500/20 bg-orange-500/10 text-orange-400"
+                        }`}
+                      >
+                        {provider.configured ? "Configured" : "Missing key"}
+                      </span>
                     </div>
-                  )}
-                </div>
+                    <div className="text-sm text-muted-foreground">
+                      {provider.reachable
+                        ? "Provider endpoint is reachable and ready to synthesize."
+                        : "No live health confirmation was returned from this endpoint yet."}
+                    </div>
+                    {provider.default && (
+                      <div className="mt-3 inline-flex items-center gap-1 text-xs text-primary">
+                        <CheckCircle2 size={12} />
+                        Default provider
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="glass-panel rounded-[28px] border border-border p-6">
+            <div className="mb-5 flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-secondary/15 text-secondary">
+                <Mic size={20} />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">Preset profile</h2>
+                <p className="text-xs text-muted-foreground">
+                  Pick the voice character BELKA should use for spoken prompts, updates, and command feedback.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-3">
+              {(providersData?.presets || []).map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => setConfig((prev) => ({ ...prev, preset: preset.id }))}
+                  className={`rounded-2xl border p-4 text-left transition-all ${
+                    config.preset === preset.id
+                      ? "border-primary/30 bg-primary/10 shadow-[0_0_0_1px_rgba(46,160,67,0.16)]"
+                      : "border-border/70 bg-background/70 hover:border-primary/20 hover:bg-background"
+                  }`}
+                >
+                  <div className="mb-1 text-sm font-semibold text-foreground">{preset.name}</div>
+                  <div className="text-xs leading-relaxed text-muted-foreground">{preset.description}</div>
+                </button>
               ))}
             </div>
-          )}
+          </section>
         </div>
 
-        <div className="glass-panel rounded-2xl p-6 border border-border">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-sky-500/10 flex items-center justify-center">
-              <Mic size={20} className="text-sky-500" />
+        <section className="glass-panel rounded-[28px] border border-border p-6">
+          <div className="mb-5 flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/12 text-primary">
+              <ShieldCheck size={20} />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-foreground">Профиль озвучки</h3>
-              <p className="text-xs text-muted-foreground">Выбор голоса для команд, ответов и статусов. Для “JARVIS”-эффекта рекомендован профиль Jarvis RU.</p>
+              <h2 className="text-lg font-semibold text-foreground">Behavior and safeguards</h2>
+              <p className="text-xs text-muted-foreground">
+                These settings control speaking, dictation, unknown command routing, and echo protection.
+              </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {(providersData?.presets || []).map((preset) => (
-              <button
-                key={preset.id}
-                onClick={() => setConfig((prev) => ({ ...prev, preset: preset.id }))}
-                className={`rounded-2xl border p-4 text-left transition-colors ${
-                  config.preset === preset.id
-                    ? "border-primary bg-primary/10"
-                    : "border-border hover:border-primary/30 bg-background/70"
-                }`}
-              >
-                <div className="font-medium text-foreground mb-1">{preset.name}</div>
-                <div className="text-sm text-muted-foreground">{preset.description}</div>
-              </button>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {[
+              {
+                key: "voiceEnabled" as const,
+                title: "Voice pipeline enabled",
+                hint: "Turns on the shared spoken assistant flow.",
+              },
+              {
+                key: "dictationEnabled" as const,
+                title: "Dictation mode",
+                hint: "Allows speech-to-text dictation into the chat composer.",
+              },
+              {
+                key: "autoSpeakSteps" as const,
+                title: "Speak agent steps",
+                hint: "Reads short status updates while BELKA is thinking, searching, or reviewing.",
+              },
+              {
+                key: "autoSpeakReplies" as const,
+                title: "Speak final replies",
+                hint: "Reads final answers out loud when the interaction is concise enough.",
+              },
+              {
+                key: "routeUnknownCommandsToAgent" as const,
+                title: "Route unknown commands to BELKA",
+                hint: "If no local voice phrase matches, send the spoken request into the main agent flow.",
+              },
+              {
+                key: "echoGuardEnabled" as const,
+                title: "Echo guard",
+                hint: "Pauses recognition during playback so BELKA does not answer itself.",
+              },
+            ].map((item) => (
+              <div key={item.key} className="rounded-2xl border border-border/70 bg-background/70 p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-medium text-foreground">{item.title}</div>
+                    <div className="text-xs text-muted-foreground">{item.hint}</div>
+                  </div>
+                  <Toggle
+                    checked={config[item.key]}
+                    onChange={() => setConfig((prev) => ({ ...prev, [item.key]: !prev[item.key] }))}
+                  />
+                </div>
+              </div>
             ))}
           </div>
-        </div>
 
-        <div className="glass-panel rounded-2xl p-6 border border-border">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-              <ShieldCheck size={20} className="text-emerald-500" />
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <SliderRow
+              label="Echo guard resume delay"
+              hint="How long BELKA waits after playback before reopening the microphone."
+              value={config.echoGuardDelayMs}
+              min={300}
+              max={2000}
+              step={50}
+              suffix=" ms"
+              onChange={(nextValue) => setConfig((prev) => ({ ...prev, echoGuardDelayMs: nextValue }))}
+            />
+            <SliderRow
+              label="Max reply chars for auto speech"
+              hint="Longer replies stay visual-only; shorter ones can be read out loud."
+              value={config.replyMaxChars}
+              min={120}
+              max={800}
+              step={20}
+              onChange={(nextValue) => setConfig((prev) => ({ ...prev, replyMaxChars: nextValue }))}
+            />
+          </div>
+        </section>
+
+        <section className="glass-panel rounded-[28px] border border-border p-6">
+          <div className="mb-5 flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-secondary/15 text-secondary">
+              <BrainCircuit size={20} />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-foreground">Поведение ассистента</h3>
-              <p className="text-xs text-muted-foreground">Здесь управляется озвучка шагов, финальных ответов и защита от того, чтобы ассистент не отвечал сам себе.</p>
+              <h2 className="text-lg font-semibold text-foreground">Live checks</h2>
+              <p className="text-xs text-muted-foreground">
+                Validate the voice engine separately from the BELKA chat flow before you roll changes out.
+              </p>
             </div>
           </div>
 
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-foreground">Голосовые ответы</div>
-                <div className="text-xs text-muted-foreground">Включает общий голосовой контур ассистента.</div>
-              </div>
-              <Toggle checked={config.voiceEnabled} onChange={() => setConfig((prev) => ({ ...prev, voiceEnabled: !prev.voiceEnabled }))} />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-foreground">Диктовка</div>
-                <div className="text-xs text-muted-foreground">Разрешает режим диктовки текста в поле ввода.</div>
-              </div>
-              <Toggle checked={config.dictationEnabled} onChange={() => setConfig((prev) => ({ ...prev, dictationEnabled: !prev.dictationEnabled }))} />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-foreground">Озвучка шагов</div>
-                <div className="text-xs text-muted-foreground">Ассистент проговаривает статусы вроде анализа, поиска и проверки.</div>
-              </div>
-              <Toggle checked={config.autoSpeakSteps} onChange={() => setConfig((prev) => ({ ...prev, autoSpeakSteps: !prev.autoSpeakSteps }))} />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-foreground">Озвучка финального ответа</div>
-                <div className="text-xs text-muted-foreground">Подходит для chat-режима и коротких ответов без длинного кода.</div>
-              </div>
-              <Toggle checked={config.autoSpeakReplies} onChange={() => setConfig((prev) => ({ ...prev, autoSpeakReplies: !prev.autoSpeakReplies }))} />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-foreground">Неизвестные команды отправлять агенту</div>
-                <div className="text-xs text-muted-foreground">Если фраза не совпала с локальной командой, она уйдёт в BELKA как полноценная задача.</div>
-              </div>
-              <Toggle checked={config.routeUnknownCommandsToAgent} onChange={() => setConfig((prev) => ({ ...prev, routeUnknownCommandsToAgent: !prev.routeUnknownCommandsToAgent }))} />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-foreground">Echo guard</div>
-                <div className="text-xs text-muted-foreground">Во время озвучки распознавание временно ставится на паузу, чтобы ассистент не слушал сам себя.</div>
-              </div>
-              <Toggle checked={config.echoGuardEnabled} onChange={() => setConfig((prev) => ({ ...prev, echoGuardEnabled: !prev.echoGuardEnabled }))} />
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-foreground">Задержка перед возобновлением микрофона</span>
-                <span className="text-xs text-muted-foreground">{config.echoGuardDelayMs} мс</span>
-              </div>
-              <input
-                type="range"
-                min={300}
-                max={2000}
-                step={50}
-                value={config.echoGuardDelayMs}
-                onChange={(e) => setConfig((prev) => ({ ...prev, echoGuardDelayMs: Number(e.target.value) }))}
-                className="w-full"
-              />
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-foreground">Максимум символов для автоозвучки ответа</span>
-                <span className="text-xs text-muted-foreground">{config.replyMaxChars}</span>
-              </div>
-              <input
-                type="range"
-                min={120}
-                max={800}
-                step={20}
-                value={config.replyMaxChars}
-                onChange={(e) => setConfig((prev) => ({ ...prev, replyMaxChars: Number(e.target.value) }))}
-                className="w-full"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="glass-panel rounded-2xl p-6 border border-border">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center">
-              <BrainCircuit size={20} className="text-violet-500" />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold text-foreground">Проверка контура</h3>
-              <p className="text-xs text-muted-foreground">Проверяем отдельно голосовой движок и отдельно связку с BELKA-агентом.</p>
-            </div>
-          </div>
-
-          <div className="flex gap-3 flex-wrap">
+          <div className="flex flex-wrap gap-3">
             <button
               onClick={handleTestVoice}
               disabled={testingVoice}
-              className="px-4 py-2.5 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-sm font-medium hover:bg-emerald-500/20 transition-colors flex items-center gap-2 disabled:opacity-70"
+              className="inline-flex items-center gap-2 rounded-2xl border border-primary/20 bg-primary/10 px-4 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-primary/16 disabled:opacity-70"
             >
               {testingVoice ? <Loader2 size={16} className="animate-spin" /> : <Volume2 size={16} />}
-              Тест голоса
+              Test voice output
             </button>
 
             <button
               onClick={handleTestAgent}
               disabled={testingAgent}
-              className="px-4 py-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 text-sm font-medium hover:bg-primary/20 transition-colors flex items-center gap-2 disabled:opacity-70"
+              className="inline-flex items-center gap-2 rounded-2xl border border-secondary/20 bg-secondary/10 px-4 py-2.5 text-sm font-medium text-secondary transition-colors hover:bg-secondary/16 disabled:opacity-70"
             >
               {testingAgent ? <Loader2 size={16} className="animate-spin" /> : <BrainCircuit size={16} />}
-              Тест BELKA
+              Test BELKA reply
             </button>
           </div>
 
           {testResult && (
-            <div className="mt-4 p-4 rounded-2xl border border-border bg-background/70 text-sm text-foreground whitespace-pre-wrap">
+            <div className="mt-4 rounded-2xl border border-border/70 bg-background/70 p-4 text-sm text-foreground whitespace-pre-wrap">
               {testResult}
             </div>
           )}
-        </div>
+        </section>
 
         <div className="flex justify-end">
           <button
             onClick={handleSave}
-            className="px-6 py-3 bg-primary text-white rounded-xl font-semibold flex items-center gap-2 hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20"
+            disabled={saving}
+            className="inline-flex items-center gap-2 rounded-2xl bg-primary px-6 py-3 font-semibold text-primary-foreground shadow-[0_14px_40px_rgba(46,160,67,0.22)] transition-all hover:translate-y-[-1px] hover:shadow-[0_18px_46px_rgba(46,160,67,0.28)] disabled:opacity-70"
           >
-            <Save size={18} />
-            Сохранить настройки
+            {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+            Save global voice settings
           </button>
         </div>
       </div>

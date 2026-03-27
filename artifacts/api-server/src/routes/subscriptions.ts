@@ -1,24 +1,24 @@
 import { Router, type IRouter } from "express";
 import { db, subscriptionPlansTable, promoCodesTable, tokenUsageTable, usersTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
-import jwt from "jsonwebtoken";
-import { JWT_SECRET } from "../config";
+import { getSessionUserId } from "../lib/auth-session";
+import { parseStoredStringArray } from "../lib/serialized-arrays";
 
 const router: IRouter = Router();
 
 function getUserId(req: any): number | null {
-  try {
-    const token = req.headers.authorization?.split(" ")[1];
-    if (!token) return null;
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: number };
-    return decoded.id;
-  } catch { return null; }
+  return getSessionUserId(req);
 }
 
 router.get("/plans", async (req, res) => {
   try {
     const plans = await db.select().from(subscriptionPlansTable).where(eq(subscriptionPlansTable.isActive, true));
-    res.json({ plans });
+    res.json({
+      plans: plans.map((plan) => ({
+        ...plan,
+        features: parseStoredStringArray(plan.features),
+      })),
+    });
   } catch (err) {
     req.log.error({ err }, "Get plans error");
     res.status(500).json({ error: "Internal server error" });

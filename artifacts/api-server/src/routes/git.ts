@@ -1,9 +1,8 @@
 import { Router, type Request, type Response } from "express";
 import { execFileSync } from "child_process";
-import path from "path";
 import os from "os";
 import fs from "fs";
-import { getWorkspace } from "../lib/workspace-state";
+import { ensureWorkspace, getWorkspace, sanitizeWorkspacePath } from "../lib/workspace-state";
 
 const router = Router();
 
@@ -21,18 +20,26 @@ function gitExec(args: string[], cwd: string): string {
   });
 }
 
+function getRequiredUserId(req: Request): number {
+  if (!req.userId) {
+    throw new Error("userId missing on authenticated route");
+  }
+
+  return req.userId;
+}
+
 router.post("/git/clone", (req: Request, res: Response) => {
+  const userId = getRequiredUserId(req);
   const { url, directory } = req.body;
   if (!url) { res.status(400).json({ error: "url required" }); return; }
 
   const safeUrl = sanitizeShellArg(url);
   if (!safeUrl.match(/^https?:\/\//)) { res.status(400).json({ error: "only http(s) URLs allowed" }); return; }
 
-  const workspace = getWorkspace();
-  const targetDir = sanitizeShellArg(directory || path.basename(url, ".git"));
-  const fullPath = path.resolve(workspace, targetDir);
-
-  if (!fullPath.startsWith(workspace)) { res.status(403).json({ error: "invalid directory" }); return; }
+  const workspace = ensureWorkspace(userId);
+  const targetDir = sanitizeShellArg(directory || safeUrl.split("/").pop()?.replace(/\.git$/i, "") || "repository");
+  const fullPath = sanitizeWorkspacePath(userId, targetDir);
+  if (!fullPath) { res.status(403).json({ error: "invalid directory" }); return; }
 
   try {
     if (fs.existsSync(fullPath)) {
@@ -46,10 +53,10 @@ router.post("/git/clone", (req: Request, res: Response) => {
   }
 });
 
-router.get("/git/status", (_req: Request, res: Response) => {
-  const workspace = getWorkspace();
+router.get("/git/status", (req: Request, res: Response) => {
+  const workspace = getWorkspace(getRequiredUserId(req));
   try {
-    const isGit = fs.existsSync(path.join(workspace, ".git"));
+    const isGit = fs.existsSync(require("path").join(workspace, ".git"));
     if (!isGit) { res.json({ initialized: false, workspace }); return; }
 
     const branch = gitExec(["branch", "--show-current"], workspace).trim();
@@ -67,8 +74,8 @@ router.get("/git/status", (_req: Request, res: Response) => {
   }
 });
 
-router.post("/git/init", (_req: Request, res: Response) => {
-  const workspace = getWorkspace();
+router.post("/git/init", (req: Request, res: Response) => {
+  const workspace = ensureWorkspace(getRequiredUserId(req));
   try {
     gitExec(["init"], workspace);
     res.json({ success: true, workspace });
@@ -78,10 +85,11 @@ router.post("/git/init", (_req: Request, res: Response) => {
 });
 
 router.post("/git/commit", (req: Request, res: Response) => {
+  const userId = getRequiredUserId(req);
   const { message } = req.body;
   if (!message) { res.status(400).json({ error: "message required" }); return; }
 
-  const workspace = getWorkspace();
+  const workspace = getWorkspace(userId);
   const safeMsg = sanitizeShellArg(message).slice(0, 200);
 
   try {
@@ -98,8 +106,9 @@ router.post("/git/commit", (req: Request, res: Response) => {
 });
 
 router.post("/git/push", (req: Request, res: Response) => {
+  const userId = getRequiredUserId(req);
   const { remote, branch } = req.body;
-  const workspace = getWorkspace();
+  const workspace = getWorkspace(userId);
   const r = sanitizeShellArg(remote || "origin");
   const b = sanitizeShellArg(branch || "main");
 
@@ -112,7 +121,7 @@ router.post("/git/push", (req: Request, res: Response) => {
 });
 
 router.get("/git/log", (req: Request, res: Response) => {
-  const workspace = getWorkspace();
+  const workspace = getWorkspace(getRequiredUserId(req));
   const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 20, 1), 100);
 
   try {
@@ -128,9 +137,10 @@ router.get("/git/log", (req: Request, res: Response) => {
 });
 
 router.post("/git/remote/add", (req: Request, res: Response) => {
+  const userId = getRequiredUserId(req);
   const { name, url } = req.body;
   if (!name || !url) { res.status(400).json({ error: "name and url required" }); return; }
-  const workspace = getWorkspace();
+  const workspace = getWorkspace(userId);
   const safeName = sanitizeShellArg(name);
   const safeUrl = sanitizeShellArg(url);
   try {

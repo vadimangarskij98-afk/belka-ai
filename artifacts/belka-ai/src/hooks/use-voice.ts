@@ -1,7 +1,19 @@
 import { useState, useCallback, useRef, useEffect } from "react";
+import { apiFetch, jsonHeaders } from "@/lib/api";
 import { matchPhrase, type VoiceAction } from "@/lib/voice-phrases";
 import { VOICE_RESPONSES } from "@/lib/voice-responses";
-import { getVoiceAssistantConfig } from "@/lib/voice-config";
+import { getVoiceAssistantConfig, loadVoiceAssistantConfig } from "@/lib/voice-config";
+import {
+  DICTATION_SEND_PHRASES,
+  DICTATION_STOP_PHRASES,
+  VOICE_ACKNOWLEDGED_MESSAGE,
+  VOICE_CLIP_TEXT,
+  VOICE_DICTATION_DISABLED_MESSAGE,
+  VOICE_DISABLED_MESSAGE,
+  VOICE_FALLBACK_RESPONSES,
+  VOICE_UNKNOWN_COMMAND_MESSAGE,
+  VOICE_UNSUPPORTED_BROWSER_MESSAGE,
+} from "@/lib/voice-copy";
 
 interface SpeechRecognitionEvent {
   results: {
@@ -31,36 +43,6 @@ const playbackSubscribers = new Set<(state: VoicePlaybackState) => void>();
 let currentAudio: HTMLAudioElement | null = null;
 let isSpeaking = false;
 
-const CLEAN_CLIP_TEXT: Record<string, string> = {
-  mic_on: "Голосовой режим включён. Слушаю вас.",
-  mic_off: "Голосовой режим выключен.",
-  listen: "Слушаю внимательно.",
-  dictate: "Режим диктовки включён. Говорите, я записываю.",
-  dictate_done: "Диктовка завершена.",
-  send_message: "Отправляю задачу.",
-  typing: "Записываю команду.",
-  analyzing: "Анализирую запрос.",
-  researching: "Проверяю информацию.",
-  writing: "Формирую ответ.",
-  checking: "Проверяю результат.",
-  start_work: "Принято. Начинаю работу.",
-  save: "Сохранено.",
-  open_terminal: "Открываю терминал.",
-  open_files: "Открываю файловую панель.",
-  close_files: "Закрываю файловую панель.",
-  run_preview: "Запускаю предпросмотр.",
-  settings_saved: "Настройки сохранены.",
-  sidebar_open: "Открываю боковую панель.",
-  sidebar_close: "Закрываю боковую панель.",
-};
-
-const FALLBACK_RESPONSES = [
-  "Принято. Отправляю задачу агенту.",
-  "Команда принята, выполняю.",
-  "Хорошо, начинаю обработку.",
-  "Понял, передаю это в работу.",
-];
-
 function emitPlaybackState(state: VoicePlaybackState) {
   playbackSubscribers.forEach((listener) => listener(state));
 }
@@ -68,11 +50,6 @@ function emitPlaybackState(state: VoicePlaybackState) {
 function setSpeaking(nextValue: boolean) {
   isSpeaking = nextValue;
   emitPlaybackState({ speaking: nextValue });
-}
-
-function getAuthHeaders(): Record<string, string> {
-  const token = typeof window !== "undefined" ? window.localStorage.getItem("belka-token") : "";
-  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 function getLocalAudioUrl(filename: string): string {
@@ -84,7 +61,7 @@ function looksBroken(text: string): boolean {
 }
 
 function getResponseText(clip: string): string {
-  if (CLEAN_CLIP_TEXT[clip]) return CLEAN_CLIP_TEXT[clip];
+  if (VOICE_CLIP_TEXT[clip]) return VOICE_CLIP_TEXT[clip];
 
   const value = VOICE_RESPONSES[clip];
   const pick = Array.isArray(value)
@@ -92,7 +69,7 @@ function getResponseText(clip: string): string {
     : (typeof value === "string" ? value : "");
 
   if (!pick || looksBroken(pick)) {
-    return "Принято.";
+    return VOICE_ACKNOWLEDGED_MESSAGE;
   }
 
   return pick;
@@ -156,12 +133,9 @@ async function remoteSpeak(text: string, options: RemoteSpeakOptions = {}): Prom
       return playAudioElement(cached);
     }
 
-    const response = await fetch(`${BASE}/api/voice/synthesize`, {
+    const response = await apiFetch(`${BASE}/api/voice/synthesize`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...getAuthHeaders(),
-      },
+      headers: jsonHeaders(),
       body: JSON.stringify({
         text,
         provider,
@@ -217,6 +191,10 @@ async function speakWithFallback(text: string, options?: RemoteSpeakOptions): Pr
   await browserSpeak(text);
 }
 
+function matchesAnyPhrase(text: string, phrases: string[]): boolean {
+  return phrases.some((phrase) => text === phrase || text.includes(phrase));
+}
+
 export async function playVoice(clip: string): Promise<void> {
   const config = getVoiceAssistantConfig();
   if (!config.voiceEnabled) return;
@@ -251,8 +229,8 @@ export async function speakAssistantReply(text: string): Promise<void> {
 }
 
 export async function speakText(_text: string): Promise<void> {
-  const idx = Math.floor(Math.random() * FALLBACK_RESPONSES.length);
-  await speakWithFallback(FALLBACK_RESPONSES[idx]);
+  const idx = Math.floor(Math.random() * VOICE_FALLBACK_RESPONSES.length);
+  await speakWithFallback(VOICE_FALLBACK_RESPONSES[idx]);
 }
 
 export function isCurrentlySpeaking(): boolean {
@@ -305,6 +283,9 @@ export function useVoiceAssistant(onAction?: VoiceActionHandler) {
   useEffect(() => { onActionRef.current = onAction; }, [onAction]);
   useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
   useEffect(() => { isDictatingRef.current = isDictating; }, [isDictating]);
+  useEffect(() => {
+    void loadVoiceAssistantConfig();
+  }, []);
 
   const stopRecognition = useCallback(() => {
     if (recognitionRef.current) {
@@ -384,11 +365,11 @@ export function useVoiceAssistant(onAction?: VoiceActionHandler) {
     if (isDictatingRef.current) {
       const lower = trimmed.toLowerCase();
 
-      if (lower.includes("стоп диктовку") || lower.includes("хватит диктовать") || lower.includes("закончи диктовку") || lower === "стоп") {
+      if (matchesAnyPhrase(lower, DICTATION_STOP_PHRASES)) {
         setIsDictating(false);
         isDictatingRef.current = false;
         await playVoice("dictate_done");
-      } else if (lower.includes("отправь") || lower.includes("отправить") || lower.includes("send")) {
+      } else if (matchesAnyPhrase(lower, DICTATION_SEND_PHRASES)) {
         setIsDictating(false);
         isDictatingRef.current = false;
         await playVoice("send_message");
@@ -407,7 +388,7 @@ export function useVoiceAssistant(onAction?: VoiceActionHandler) {
     if (match) {
       if (match.action?.type === "dictateMode") {
         if (!config.dictationEnabled) {
-          await speakWithFallback("Диктовка сейчас отключена в настройках.");
+          await speakWithFallback(VOICE_DICTATION_DISABLED_MESSAGE);
           setIsProcessing(false);
           return;
         }
@@ -430,7 +411,7 @@ export function useVoiceAssistant(onAction?: VoiceActionHandler) {
       await speakText(trimmed);
       onActionRef.current({ type: "sendToAgent", text: trimmed });
     } else {
-      await speakWithFallback("Не до конца понял команду. Перефразируйте, пожалуйста.");
+      await speakWithFallback(VOICE_UNKNOWN_COMMAND_MESSAGE);
     }
 
     setIsProcessing(false);
@@ -466,6 +447,8 @@ export function useVoiceAssistant(onAction?: VoiceActionHandler) {
   }, [startRecognition, stopRecognition]);
 
   const toggle = useCallback(() => {
+    const config = getVoiceAssistantConfig();
+
     if (isActive) {
       stopRecognition();
       stopAllVoice();
@@ -474,14 +457,19 @@ export function useVoiceAssistant(onAction?: VoiceActionHandler) {
       isDictatingRef.current = false;
       setLastTranscript("");
       lastProcessedRef.current = "";
-      playVoice("mic_off");
+      void playVoice("mic_off");
+      return;
+    }
+
+    if (!config.voiceEnabled) {
+      void speakWithFallback(VOICE_DISABLED_MESSAGE);
       return;
     }
 
     setIsActive(true);
     setLastTranscript("");
     lastProcessedRef.current = "";
-    playVoice("mic_on").finally(() => {
+    void playVoice("mic_on").finally(() => {
       const delay = getVoiceAssistantConfig().echoGuardDelayMs;
       if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
       restartTimerRef.current = setTimeout(() => {
@@ -550,7 +538,7 @@ export function useVoiceModal() {
   const startRecognition = useCallback(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      setTranscript("Голосовой ввод не поддерживается в этом браузере.");
+      setTranscript(VOICE_UNSUPPORTED_BROWSER_MESSAGE);
       setIsListening(false);
       return;
     }
@@ -587,7 +575,7 @@ export function useVoiceModal() {
   const openModal = useCallback(() => {
     setIsOpen(true);
     setTranscript("");
-    playVoice("listen");
+    void playVoice("listen");
     startTimerRef.current = setTimeout(() => {
       startRecognition();
     }, 1_200);

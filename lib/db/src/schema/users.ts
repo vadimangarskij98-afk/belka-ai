@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, varchar, boolean, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, varchar, boolean, integer, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -11,11 +11,13 @@ export const usersTable = pgTable("users", {
   plan: varchar("plan", { length: 20 }).notNull().default("free"),
   githubToken: text("github_token"),
   githubUsername: varchar("github_username", { length: 255 }),
-  referralCode: varchar("referral_code", { length: 20 }).unique(),
+  referralCode: varchar("referral_code", { length: 20 }),
   referredBy: integer("referred_by"),
   bonusRequests: integer("bonus_requests").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  referralCodeUnique: unique("users_referral_code_key").on(table.referralCode),
+}));
 
 export const insertUserSchema = createInsertSchema(usersTable).omit({ id: true, createdAt: true });
 export type InsertUser = z.infer<typeof insertUserSchema>;

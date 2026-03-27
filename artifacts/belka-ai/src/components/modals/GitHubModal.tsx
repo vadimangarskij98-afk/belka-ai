@@ -1,17 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { Github, RefreshCw, Loader2, Check, X, ExternalLink, GitBranch, Lock, Globe, Star, FolderGit2, Plus, Upload } from "lucide-react";
 import { useTheme } from "@/lib/theme";
+import { apiFetch, buildApiUrl, jsonHeaders } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-const BASE = import.meta.env.BASE_URL || "/";
-const API = `${BASE}api`.replace(/\/\/+/g, "/");
-
-function getToken() {
-  return localStorage.getItem("belka-token") || "";
-}
-function getHeaders() {
-  return { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` };
-}
+const API = buildApiUrl();
 
 interface GHRepo {
   id: string;
@@ -55,7 +48,7 @@ export function GitHubModal({ open, onClose, onSelectRepo }: GitHubModalProps) {
 
   const checkStatus = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/github/status`, { headers: getHeaders() });
+      const res = await apiFetch(`${API}/github/status`);
       const data = await res.json();
       setStatus(data);
       if (data.connected) fetchRepos();
@@ -66,7 +59,7 @@ export function GitHubModal({ open, onClose, onSelectRepo }: GitHubModalProps) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API}/github/repos`, { headers: getHeaders() });
+      const res = await apiFetch(`${API}/github/repos`);
       const data = await res.json();
       if (data.repos) setRepos(data.repos);
       else setError(data.error || "Ошибка загрузки репозиториев");
@@ -82,13 +75,17 @@ export function GitHubModal({ open, onClose, onSelectRepo }: GitHubModalProps) {
 
   useEffect(() => {
     const handleCallback = async (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+
       if (event.data?.type === "github_oauth_callback" && event.data?.code) {
         setConnectLoading(true);
         try {
-          const res = await fetch(`${API}/github/auth/callback`, {
+          const res = await apiFetch(`${API}/github/auth/callback`, {
             method: "POST",
-            headers: getHeaders(),
-            body: JSON.stringify({ code: event.data.code }),
+            headers: jsonHeaders(),
+            body: JSON.stringify({ code: event.data.code, state: event.data.state }),
           });
           const data = await res.json();
           if (data.success) {
@@ -111,7 +108,7 @@ export function GitHubModal({ open, onClose, onSelectRepo }: GitHubModalProps) {
     setConnectLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API}/github/auth/url`, { headers: getHeaders() });
+      const res = await apiFetch(`${API}/github/auth/url`);
       const data = await res.json();
       if (data.url) {
         const popup = window.open(data.url, "github_oauth", "width=600,height=700,left=100,top=100");
@@ -124,14 +121,15 @@ export function GitHubModal({ open, onClose, onSelectRepo }: GitHubModalProps) {
           try {
             const params = new URL(popup?.location.href || "").searchParams;
             const code = params.get("code");
+            const state = params.get("state");
             if (code) {
               clearInterval(timer);
               popup?.close();
               (async () => {
-                const r = await fetch(`${API}/github/auth/callback`, {
+                const r = await apiFetch(`${API}/github/auth/callback`, {
                   method: "POST",
-                  headers: getHeaders(),
-                  body: JSON.stringify({ code }),
+                  headers: jsonHeaders(),
+                  body: JSON.stringify({ code, state }),
                 });
                 const d = await r.json();
                 if (d.success) {
@@ -156,7 +154,7 @@ export function GitHubModal({ open, onClose, onSelectRepo }: GitHubModalProps) {
   };
 
   const handleDisconnect = async () => {
-    await fetch(`${API}/github/disconnect`, { method: "DELETE", headers: getHeaders() });
+    await apiFetch(`${API}/github/disconnect`, { method: "DELETE" });
     setStatus({ connected: false });
     setRepos([]);
   };
@@ -166,9 +164,9 @@ export function GitHubModal({ open, onClose, onSelectRepo }: GitHubModalProps) {
     if (!newRepoName.trim()) return;
     setCreateLoading(true);
     try {
-      const res = await fetch(`${API}/github/repos/create`, {
+      const res = await apiFetch(`${API}/github/repos/create`, {
         method: "POST",
-        headers: getHeaders(),
+        headers: jsonHeaders(),
         body: JSON.stringify({ name: newRepoName.trim(), description: newRepoDesc.trim(), isPrivate: newRepoPrivate }),
       });
       const data = await res.json();

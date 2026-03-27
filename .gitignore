@@ -52,3 +52,10 @@ replit.nix
 .playwright-cli/
 frontend-dev.log
 frontend-dev.err.log
+output/
+.tmp-query-fields.json
+.tmp-railway-*.json
+.tmp-railway-*.txt
+.tmp-runtime-smoke.ps1
+artifacts/api-server/.tmp-backend-*.log
+artifacts/belka-ai/.tmp-frontend-preview*.log

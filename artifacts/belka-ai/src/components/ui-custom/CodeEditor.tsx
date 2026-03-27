@@ -70,7 +70,7 @@ export function CodeEditor({ path, content, onChange, onSave, onClose, readOnly,
           <span className="text-sm flex-shrink-0">{icon}</span>
           <span className="text-xs font-mono text-foreground/80 truncate">{path}</span>
           {isModified && (
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0" title="Изменён" />
+            <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-primary" title="Modified" />
           )}
           <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground flex-shrink-0">{lang}</span>
         </div>

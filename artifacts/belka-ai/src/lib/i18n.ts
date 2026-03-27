@@ -525,7 +525,7 @@ const translations = {
 
 export type TranslationKey = keyof typeof translations.ru;
 
-let currentLang: Lang = (typeof window !== "undefined" && localStorage.getItem("belka-lang") as Lang) || "ru";
+let currentLang: Lang = (typeof window !== "undefined" && localStorage.getItem("belka-lang") as Lang) || "en";
 
 export function setLang(lang: Lang) {
   currentLang = lang;

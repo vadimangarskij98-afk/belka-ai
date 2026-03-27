@@ -33,7 +33,7 @@ export default function ToolCallBlock({ tool, args, status, result, error, durat
     <div className={`rounded-lg border overflow-hidden my-2 transition-all ${
       status === "error" ? "border-red-500/30 bg-red-500/5" :
       status === "done" ? "border-emerald-500/20 bg-emerald-500/5" :
-      "border-blue-500/20 bg-blue-500/5"
+      "border-primary/20 bg-primary/5"
     }`}>
       <button
         onClick={() => setExpanded(!expanded)}
@@ -42,7 +42,7 @@ export default function ToolCallBlock({ tool, args, status, result, error, durat
         <div className={`flex items-center justify-center w-6 h-6 rounded ${
           status === "error" ? "bg-red-500/20 text-red-400" :
           status === "done" ? "bg-emerald-500/20 text-emerald-400" :
-          "bg-blue-500/20 text-blue-400"
+          "bg-primary/10 text-primary"
         }`}>
           <Icon className="w-3.5 h-3.5" />
         </div>
@@ -56,7 +56,7 @@ export default function ToolCallBlock({ tool, args, status, result, error, durat
           {duration !== undefined && (
             <span className="text-xs text-white/30 font-mono">{(duration / 1000).toFixed(1)}s</span>
           )}
-          {status === "running" && <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin" />}
+          {status === "running" && <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />}
           {status === "done" && <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />}
           {status === "error" && <AlertCircle className="w-3.5 h-3.5 text-red-400" />}
           {expanded ? <ChevronDown className="w-3.5 h-3.5 text-white/30" /> : <ChevronRight className="w-3.5 h-3.5 text-white/30" />}

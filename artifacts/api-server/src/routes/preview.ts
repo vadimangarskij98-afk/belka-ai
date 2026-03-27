@@ -3,12 +3,13 @@ import { spawn, type ChildProcess } from "child_process";
 import path from "path";
 import os from "os";
 import fs from "fs";
-import { getWorkspace } from "../lib/workspace-state";
+import { resolveWorkspaceCwd } from "../lib/workspace-state";
 
 const router = Router();
 
 interface PreviewServer {
   process: ChildProcess;
+  userId: number;
   port: number;
   logs: string[];
   status: "starting" | "running" | "error" | "stopped";
@@ -16,7 +17,15 @@ interface PreviewServer {
   command: string;
 }
 
-let currentPreview: PreviewServer | null = null;
+const previews = new Map<number, PreviewServer>();
+
+function getRequiredUserId(req: Request): number {
+  if (!req.userId) {
+    throw new Error("userId missing on authenticated route");
+  }
+
+  return req.userId;
+}
 
 function getPreviewCommand(name: "python"): string {
   return process.platform === "win32" ? "python" : name;
@@ -42,10 +51,16 @@ function detectStartCommand(dir: string): { command: string; args: string[] } | 
 }
 
 router.post("/preview/start", (req: Request, res: Response) => {
+  const userId = getRequiredUserId(req);
   const { command, cwd, port } = req.body;
-  const workspace = cwd || getWorkspace();
+  const workspace = resolveWorkspaceCwd(userId, cwd);
+  if (!workspace) {
+    res.status(403).json({ error: "cwd outside workspace" });
+    return;
+  }
   const previewPort = port || 3333;
 
+  const currentPreview = previews.get(userId);
   if (currentPreview && currentPreview.status !== "stopped" && currentPreview.status !== "error") {
     try { currentPreview.process.kill(); } catch {}
   }
@@ -79,6 +94,7 @@ router.post("/preview/start", (req: Request, res: Response) => {
 
     const preview: PreviewServer = {
       process: child,
+      userId,
       port: previewPort,
       logs: [],
       status: "starting",
@@ -116,14 +132,16 @@ router.post("/preview/start", (req: Request, res: Response) => {
       if (preview.status === "starting") preview.status = "running";
     }, 5000);
 
-    currentPreview = preview;
+    previews.set(userId, preview);
     res.json({ success: true, port: previewPort, command: fullCommand, status: "starting" });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-router.post("/preview/stop", (_req: Request, res: Response) => {
+router.post("/preview/stop", (req: Request, res: Response) => {
+  const userId = getRequiredUserId(req);
+  const currentPreview = previews.get(userId);
   if (!currentPreview) {
     res.json({ success: true, message: "no preview running" });
     return;
@@ -133,7 +151,9 @@ router.post("/preview/stop", (_req: Request, res: Response) => {
   res.json({ success: true });
 });
 
-router.get("/preview/status", (_req: Request, res: Response) => {
+router.get("/preview/status", (req: Request, res: Response) => {
+  const userId = getRequiredUserId(req);
+  const currentPreview = previews.get(userId);
   if (!currentPreview) {
     res.json({ running: false });
     return;

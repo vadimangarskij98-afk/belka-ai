@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
-import { Send, Mic, MicOff, Plug, Paperclip, Loader2, Search, FileCode, CheckCircle, Eye, Brain, FolderOpen, Github, PanelRight, PanelRightClose, Upload, X, Globe, ExternalLink, Code, ShieldCheck, Sparkles, TerminalSquare, Server, Download, ImageIcon } from "lucide-react";
+import { Send, Mic, MicOff, Plug, Paperclip, Loader2, Search, FileCode, CheckCircle, Eye, Brain, FolderOpen, Github, PanelRight, PanelRightClose, Upload, X, Globe, ExternalLink, Code, ShieldCheck, Sparkles, TerminalSquare, Server, Download, ImageIcon, AudioLines, Waves } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ChatSidebar } from "@/components/layout/ChatSidebar";
@@ -22,10 +22,12 @@ import { PricingModal } from "@/components/modals/PricingModal";
 import { GitHubModal } from "@/components/modals/GitHubModal";
 import { useVoiceModal, useVoiceAssistant, playVoice, speakAssistantReply } from "@/hooks/use-voice";
 import type { VoiceAction } from "@/lib/voice-phrases";
-import { getVoiceAssistantConfig } from "@/lib/voice-config";
+import { apiFetch, buildApiUrl, jsonHeaders } from "@/lib/api";
+import { getVoiceAssistantConfig, loadVoiceAssistantConfig, subscribeVoiceAssistantConfig, type VoiceAssistantConfig } from "@/lib/voice-config";
 import { t } from "@/lib/i18n";
 import { openLocalFolder, listLocalFiles, readLocalFile, writeLocalFile, type LocalFile, getLanguageFromFilename, getFileIcon } from "@/lib/local-fs";
 import { useTheme } from "@/lib/theme";
+import { useAuth } from "@/lib/auth";
 import {
   useGetConversation,
   useGetMessages,
@@ -225,6 +227,109 @@ const TOOL_LABELS: Record<string, string> = {
   run_command: "Команда",
 };
 
+const VISIBLE_STEP_LABELS: Record<string, string> = {
+  thinking: "Understanding the task",
+  searching: "Checking live sources",
+  generating: "Drafting the response",
+  generating_image: "Generating visuals",
+  coding: "Implementing the solution",
+  reviewing: "Reviewing the output",
+  writing: "Finalizing the answer",
+};
+
+const VISIBLE_TOOL_LABELS: Record<string, string> = {
+  create_file: "Create file",
+  edit_file: "Edit file",
+  delete_file: "Delete file",
+  run_command: "Run command",
+};
+
+const CHAT_STARTERS = [
+  {
+    mode: "code" as const,
+    label: "Fix a broken auth flow",
+    prompt: "Inspect the authentication flow, fix the risky session edge cases, and tell me what still needs hardening.",
+  },
+  {
+    mode: "multi-agent" as const,
+    label: "Research a stack decision",
+    prompt: "Compare the best stack for a 2026 AI workspace product and explain the tradeoffs before recommending one.",
+  },
+  {
+    mode: "chat" as const,
+    label: "Plan the next sprint",
+    prompt: "Break the next product milestone into clean execution steps, highlight blockers, and suggest what to ship first.",
+  },
+];
+
+const MODE_AGENT_RAIL: Record<"chat" | "code" | "multi-agent" | "image", {
+  role: AgentRole;
+  title: string;
+  detail: string;
+  tone: "primary" | "secondary" | "accent";
+}[]> = {
+  chat: [
+    { role: AgentRole.orchestrator, title: "Planner", detail: "Shaping the answer path", tone: "secondary" },
+    { role: AgentRole.researcher, title: "Research", detail: "Checking live context", tone: "accent" },
+    { role: AgentRole.coder, title: "Responder", detail: "Packaging the final reply", tone: "primary" },
+  ],
+  code: [
+    { role: AgentRole.coder, title: "Coder", detail: "Editing files and validating", tone: "primary" },
+    { role: AgentRole.reviewer, title: "Reviewer", detail: "Catching regressions", tone: "secondary" },
+    { role: AgentRole.designer, title: "Designer", detail: "Keeping UI balanced", tone: "accent" },
+  ],
+  "multi-agent": [
+    { role: AgentRole.researcher, title: "Research", detail: "Collecting evidence", tone: "accent" },
+    { role: AgentRole.coder, title: "Builder", detail: "Shipping the change set", tone: "primary" },
+    { role: AgentRole.reviewer, title: "QA", detail: "Verifying edge cases", tone: "secondary" },
+  ],
+  image: [
+    { role: AgentRole.designer, title: "Art direction", detail: "Refining visual language", tone: "secondary" },
+    { role: AgentRole.orchestrator, title: "Prompt routing", detail: "Choosing the generation path", tone: "accent" },
+    { role: AgentRole.coder, title: "Delivery", detail: "Preparing assets and output", tone: "primary" },
+  ],
+};
+
+function AgentActivityRail({
+  mode,
+  active = false,
+  className = "",
+}: {
+  mode: "chat" | "code" | "multi-agent" | "image";
+  active?: boolean;
+  className?: string;
+}) {
+  const toneClass: Record<"primary" | "secondary" | "accent", string> = {
+    primary: "border-primary/20 bg-primary/10 text-primary",
+    secondary: "border-secondary/20 bg-secondary/10 text-secondary",
+    accent: "border-accent/20 bg-accent/10 text-accent-foreground",
+  };
+
+  return (
+    <div className={`grid gap-2 sm:grid-cols-3 ${className}`.trim()}>
+      {MODE_AGENT_RAIL[mode].map((item) => (
+        <div
+          key={`${mode}-${item.title}`}
+          className="rounded-[22px] border border-border/70 bg-background/70 px-3 py-3"
+        >
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <AgentAvatar role={item.role} className="h-9 w-9" isPulsing={active} />
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.12em] text-foreground">{item.title}</div>
+                <div className="text-[11px] text-muted-foreground">{item.detail}</div>
+              </div>
+            </div>
+            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] ${toneClass[item.tone]}`}>
+              {active ? "Live" : "Ready"}
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ToolCallBlockInline({ tool, args, status, result, error }: { tool: string; args: Record<string, any>; status: string; result?: string; error?: string }) {
   return (
     <div className={`flex items-center gap-2 text-xs py-1 ${status === "error" ? "text-red-400" : status === "done" ? "text-muted-foreground" : "text-foreground"}`}>
@@ -235,8 +340,8 @@ function ToolCallBlockInline({ tool, args, status, result, error }: { tool: stri
       ) : (
         <FileCode size={13} className="text-red-400 flex-shrink-0" />
       )}
-      <span className={status === "running" ? "font-medium" : ""}>{TOOL_LABELS[tool] || tool}</span>
-      {args.path && <code className="text-[10px] bg-white/10 dark:bg-white/10 px-1 py-0.5 rounded font-mono">{args.path}</code>}
+      <span className={status === "running" ? "font-medium" : ""}>{VISIBLE_TOOL_LABELS[tool] || tool}</span>
+      {args.path && <code className="rounded border border-border/60 bg-card/70 px-1.5 py-0.5 text-[10px] font-mono">{args.path}</code>}
       {result && <span className="text-[10px] text-muted-foreground/50 ml-auto truncate max-w-[150px]">{result}</span>}
       {error && <span className="text-[10px] text-red-400/70 ml-auto truncate max-w-[150px]">{error}</span>}
     </div>
@@ -249,6 +354,29 @@ const MODE_OPTIONS = [
   { value: "multi-agent" as const, label: () => t("multiAgent"), icon: Brain },
   { value: "image" as const, label: () => t("image"), icon: ImageIcon },
 ];
+
+function normalizeChatMode(mode: string | undefined): "chat" | "code" | "multi-agent" | "image" {
+  switch ((mode || "").toLowerCase()) {
+    case "chat":
+      return "chat";
+    case "image":
+      return "image";
+    case "multi-agent":
+    case "multiagent":
+      return "multi-agent";
+    default:
+      return "code";
+  }
+}
+
+function splitGitHubRepoFullName(fullName: string): { owner: string; repo: string } | null {
+  const [owner, repo] = fullName.split("/");
+  if (!owner || !repo) {
+    return null;
+  }
+
+  return { owner, repo };
+}
 
 function ModeSwitcher({ mode, setMode }: { mode: string; setMode: (m: any) => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -277,16 +405,16 @@ function ModeSwitcher({ mode, setMode }: { mode: string; setMode: (m: any) => vo
   }, [updateIndicator]);
 
   return (
-    <div ref={containerRef} className="relative flex items-center gap-0 rounded-xl border border-white/[0.08] bg-white/[0.04] p-[3px]">
+    <div ref={containerRef} className="relative flex items-center gap-0 rounded-2xl border border-border/70 bg-card/70 p-[4px]">
       <div
         className="absolute top-[3px] h-[calc(100%-6px)] rounded-lg transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
         style={{
           left: indicatorStyle.left,
           width: indicatorStyle.width,
-          background: "linear-gradient(135deg, rgba(15,118,110,0.62), rgba(194,120,3,0.58))",
+          background: "linear-gradient(135deg, rgba(46,160,67,0.86), rgba(138,194,52,0.78), rgba(192,132,252,0.7))",
           backdropFilter: "blur(12px)",
-          boxShadow: "0 0 14px rgba(15,118,110,0.18), inset 0 1px 0 rgba(255,255,255,0.14), inset 0 -1px 0 rgba(0,0,0,0.12)",
-          border: "1px solid rgba(255,255,255,0.12)",
+          boxShadow: "0 0 18px rgba(46,160,67,0.16), inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.12)",
+          border: "1px solid rgba(255,255,255,0.16)",
         }}
       />
       {MODE_OPTIONS.map((m) => {
@@ -297,7 +425,7 @@ function ModeSwitcher({ mode, setMode }: { mode: string; setMode: (m: any) => vo
             key={m.value}
             data-mode={m.value}
             onClick={() => setMode(m.value)}
-            className={`relative z-10 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors duration-300 ${
+            className={`relative z-10 flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-medium transition-colors duration-300 ${
               isActive ? "text-white" : "text-muted-foreground hover:text-foreground/80"
             }`}
           >
@@ -322,24 +450,114 @@ function StepTimer({ startedAt, isActive }: { startedAt?: number; isActive: bool
   return <span className="text-[10px] font-mono text-muted-foreground/50 ml-auto tabular-nums">{(ms / 1000).toFixed(1)}s</span>;
 }
 
-function StreamingIndicator({ state }: { state: StreamingState }) {
+function VoiceCommandDock({
+  voiceAssistant,
+  voiceConfig,
+}: {
+  voiceAssistant: {
+    isActive: boolean;
+    isDictating: boolean;
+    isProcessing: boolean;
+    lastTranscript: string;
+    toggle: () => void;
+  };
+  voiceConfig: VoiceAssistantConfig;
+}) {
+  const statusTone = !voiceConfig.voiceEnabled
+    ? "border-border/70 bg-card/70 text-muted-foreground"
+    : voiceAssistant.isDictating
+      ? "border-[#F97316]/30 bg-[#F97316]/10 text-[#F97316]"
+      : voiceAssistant.isActive
+        ? "border-primary/30 bg-primary/10 text-primary"
+        : "border-secondary/25 bg-secondary/10 text-secondary";
+
+  const statusLabel = !voiceConfig.voiceEnabled
+    ? "Voice disabled"
+    : voiceAssistant.isDictating
+      ? "Dictation live"
+      : voiceAssistant.isProcessing
+        ? "Routing command"
+        : voiceAssistant.isActive
+          ? "Listening"
+          : "Voice standby";
+
+  const caption = !voiceConfig.voiceEnabled
+    ? "Enable the global voice profile in admin settings."
+    : voiceAssistant.lastTranscript
+      ? voiceAssistant.lastTranscript
+      : "Command the workspace hands-free in Russian.";
+
   return (
-    <div className="flex gap-2.5 justify-start">
-      <div className="mt-0.5 flex-shrink-0">
-        <AgentAvatar role={AgentRole.coder} isPulsing className="w-7 h-7" />
+    <div className="mx-auto flex w-full max-w-[360px] items-center gap-2 rounded-[24px] border border-border/70 bg-card/80 px-2.5 py-2 shadow-[0_12px_32px_rgba(0,0,0,0.12)] max-md:max-w-none">
+      <button
+        onClick={voiceAssistant.toggle}
+        className={`relative inline-flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl border transition-all ${
+          voiceAssistant.isDictating
+            ? "border-[#F97316]/35 bg-[#F97316]/12 text-[#F97316]"
+            : voiceAssistant.isActive
+              ? "border-primary/30 bg-primary/12 text-primary"
+              : "border-secondary/25 bg-secondary/10 text-secondary"
+        }`}
+        title={statusLabel}
+      >
+        {voiceAssistant.isActive ? <Mic size={18} /> : <MicOff size={18} />}
+        {voiceConfig.voiceEnabled && (
+          <span
+            className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full ${
+              voiceAssistant.isDictating ? "bg-[#F97316]" : voiceAssistant.isActive ? "bg-[#2EA043]" : "bg-[#C084FC]"
+            } ${voiceAssistant.isActive ? "animate-pulse" : ""}`}
+          />
+        )}
+      </button>
+
+      <div className="min-w-0 flex-1">
+        <div className="mb-1 flex items-center gap-2">
+          <div className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] ${statusTone}`}>
+            <Waves size={11} />
+            {statusLabel}
+          </div>
+          {voiceConfig.voiceEnabled && (
+            <span className="text-[10px] font-medium text-muted-foreground">{voiceConfig.preset.replace(/_/g, " ")}</span>
+          )}
+        </div>
+        <div className="truncate text-[11px] leading-5 text-muted-foreground">{caption}</div>
       </div>
-      <div className="flex flex-col items-start max-w-[80%] w-full">
-        <span className="text-[10px] font-semibold text-muted-foreground mb-0.5 ml-0.5 tracking-wider uppercase">
-          BELKA CODER
-        </span>
+    </div>
+  );
+}
+
+function StreamingIndicator({ state, mode }: { state: StreamingState; mode: "chat" | "code" | "multi-agent" | "image" }) {
+  return (
+    <div className="flex justify-start gap-3">
+      <div className="mt-1 flex-shrink-0">
+        <AgentAvatar role={AgentRole.coder} isPulsing className="h-9 w-9" />
+      </div>
+      <div className="flex w-full max-w-[88%] flex-col items-start">
+        <div className="mb-1 flex w-full items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              BELKA CODER
+            </span>
+            <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+              Working
+            </span>
+          </div>
+          {state.thinkingStartMs > 0 && (
+            <span className="text-[10px] font-mono text-muted-foreground/60">
+              {((Date.now() - state.thinkingStartMs) / 1000).toFixed(1)}s
+            </span>
+          )}
+        </div>
+
+        <AgentActivityRail mode={mode} active className="mb-2 w-full" />
 
         {state.steps.length > 0 && (
-          <div className="glass-panel px-3 py-2 rounded-2xl rounded-tl-sm mb-1.5 w-full">
-            <div className="space-y-1.5">
+          <div className="glass-panel mb-2 w-full rounded-[24px] rounded-tl-[10px] border border-border/70 px-3 py-3">
+            <div className="space-y-2">
               {state.steps.map((step, i) => {
                 const Icon = STEP_ICONS[step.step] || Brain;
                 const isActive = !step.done;
-                const label = STEP_LABELS[step.step] || step.text;
+                const label = VISIBLE_STEP_LABELS[step.step] || step.text;
                 const duration = step.endedAt && step.startedAt ? step.endedAt - step.startedAt : undefined;
                 return (
                   <div
@@ -350,16 +568,20 @@ function StreamingIndicator({ state }: { state: StreamingState }) {
                         : "text-muted-foreground"
                     }`}
                   >
-                    {isActive ? (
-                      <Loader2 size={13} className="animate-spin text-primary flex-shrink-0" />
-                    ) : (
-                      <CheckCircle size={13} className="text-green-500 flex-shrink-0" />
-                    )}
+                    <div
+                      className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-xl border ${
+                        isActive
+                          ? "border-primary/20 bg-primary/10 text-primary"
+                          : "border-border/70 bg-card/70 text-[#8AC234]"
+                      }`}
+                    >
+                      {isActive ? <Loader2 size={13} className="animate-spin" /> : <Icon size={13} />}
+                    </div>
                     <span className={isActive ? "font-medium" : ""}>{label}</span>
                     {isActive ? (
                       <StepTimer startedAt={step.startedAt} isActive={true} />
                     ) : duration !== undefined ? (
-                      <span className="text-[10px] font-mono text-muted-foreground/40 ml-auto tabular-nums">{(duration / 1000).toFixed(1)}s</span>
+                      <span className="ml-auto tabular-nums text-[10px] font-mono text-muted-foreground/40">{(duration / 1000).toFixed(1)}s</span>
                     ) : null}
                   </div>
                 );
@@ -369,7 +591,7 @@ function StreamingIndicator({ state }: { state: StreamingState }) {
         )}
 
         {state.toolCalls.length > 0 && (
-          <div className="glass-panel px-3 py-2 rounded-2xl rounded-tl-sm mb-1.5 w-full">
+          <div className="glass-panel mb-2 w-full rounded-[24px] rounded-tl-[10px] border border-border/70 px-3 py-3">
             {state.toolCalls.map((tc, i) => (
               <ToolCallBlockInline key={i} tool={tc.tool} args={tc.args} status={tc.status} result={tc.result} error={tc.error} />
             ))}
@@ -377,10 +599,10 @@ function StreamingIndicator({ state }: { state: StreamingState }) {
         )}
 
         {state.sources.length > 0 && (
-          <div className="glass-panel px-3 py-2 rounded-2xl rounded-tl-sm mb-1.5 w-full">
+          <div className="glass-panel mb-2 w-full rounded-[24px] rounded-tl-[10px] border border-border/70 px-3 py-3">
             <div className="flex items-center gap-1.5 mb-1.5">
-              <Globe size={12} className="text-blue-400" />
-              <span className="text-[10px] font-semibold text-blue-400 uppercase tracking-wider">Источники</span>
+              <Globe size={12} className="text-accent" />
+              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">Sources</span>
             </div>
             <div className="flex flex-wrap gap-1.5">
               {state.sources.map((src, i) => (
@@ -389,7 +611,7 @@ function StreamingIndicator({ state }: { state: StreamingState }) {
                   href={src.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20 text-[11px] text-blue-300 hover:bg-blue-500/20 hover:text-blue-200 transition-colors max-w-[200px] truncate"
+                  className="flex max-w-[220px] items-center gap-1 rounded-xl border border-accent/20 bg-accent/10 px-2.5 py-1.5 text-[11px] text-foreground/85 transition-colors hover:border-primary/25 hover:bg-primary/10 hover:text-foreground truncate"
                   title={src.title}
                 >
                   <ExternalLink size={10} className="flex-shrink-0" />
@@ -401,10 +623,10 @@ function StreamingIndicator({ state }: { state: StreamingState }) {
         )}
 
         {state.imageUrl && (
-          <div className="glass-panel px-3 py-2 rounded-2xl rounded-tl-sm mb-1.5 w-full">
+          <div className="glass-panel mb-2 w-full rounded-[24px] rounded-tl-[10px] border border-border/70 px-3 py-3">
             <div className="flex items-center gap-1.5 mb-2">
-              <ImageIcon size={12} className="text-violet-400" />
-              <span className="text-[10px] font-semibold text-violet-400 uppercase tracking-wider">Сгенерированное изображение</span>
+              <ImageIcon size={12} className="text-secondary" />
+              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-secondary">Generated image</span>
             </div>
             <div className="relative group/img rounded-xl overflow-hidden">
               <img src={state.imageUrl} alt={state.imagePrompt || "Generated image"} className="w-full max-w-md rounded-xl" loading="eager" />
@@ -428,12 +650,12 @@ function StreamingIndicator({ state }: { state: StreamingState }) {
 
         {state.agentStreaming && (
           <div className="mt-2 w-full">
-            <div className="flex gap-2.5 justify-start">
-              <div className="mt-0.5 flex-shrink-0">
-                <AgentAvatar role={AgentRole.reviewer} isPulsing className="w-7 h-7" />
+            <div className="flex justify-start gap-3">
+              <div className="mt-1 flex-shrink-0">
+                <AgentAvatar role={AgentRole.reviewer} isPulsing className="h-9 w-9" />
               </div>
-              <div className="flex flex-col items-start max-w-full w-full">
-                <span className="text-[10px] font-semibold text-muted-foreground mb-0.5 ml-0.5 tracking-wider uppercase">
+              <div className="flex max-w-full w-full flex-col items-start">
+                <span className="mb-1 ml-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                   {state.agentName}
                 </span>
                 {state.agentContent && <StreamingContent content={state.agentContent} />}
@@ -443,7 +665,7 @@ function StreamingIndicator({ state }: { state: StreamingState }) {
         )}
 
         {state.error && (
-          <div className="glass-panel px-3 py-2 rounded-2xl rounded-tl-sm border border-red-500/30 bg-red-500/10 text-red-400 text-sm">
+          <div className="glass-panel rounded-[24px] rounded-tl-[10px] border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
             {state.error}
           </div>
         )}
@@ -455,13 +677,13 @@ function StreamingIndicator({ state }: { state: StreamingState }) {
 function StreamingContent({ content }: { content: string }) {
   const parts = useMemo(() => parseContent(content), [content]);
   return (
-    <div className="space-y-1 w-full">
+    <div className="w-full space-y-1">
       {parts.map((part, idx) =>
         part.type === "code" ? (
           <CodeBlock key={idx} code={part.content} language={part.lang || "text"} filename={part.filename} />
         ) : (
-          <div key={idx} className="glass-panel px-3 py-2 rounded-2xl rounded-tl-sm">
-            <ShinyText className="text-sm leading-relaxed whitespace-pre-wrap">{part.content}</ShinyText>
+          <div key={idx} className="glass-panel rounded-[24px] rounded-tl-[10px] border border-border/70 px-3 py-3">
+            <div className="whitespace-pre-wrap text-sm leading-7 text-foreground">{part.content}</div>
           </div>
         )
       )}
@@ -474,6 +696,7 @@ export default function ChatPage() {
   const conversationId = params.id;
   const [input, setInput] = useState("");
   const [mode, setMode] = useState<"chat" | "code" | "multi-agent" | "image">("code");
+  const [voiceConfig, setVoiceConfig] = useState<VoiceAssistantConfig>(() => getVoiceAssistantConfig());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
   const [githubOpen, setGithubOpen] = useState(false);
@@ -482,6 +705,7 @@ export default function ChatPage() {
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const [attachedPreview, setAttachedPreview] = useState<string | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const fileAttachmentsEnabled = false;
 
   const [profileOpen, setProfileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -492,13 +716,17 @@ export default function ChatPage() {
   const [, navigate] = useLocation();
   const handleSubmitRef = useRef<(text: string) => void>(() => {});
   const { theme, setTheme: setThemeValue } = useTheme();
+  const { logout, user, isAdmin } = useAuth();
 
   const [filesPanelOpen, setFilesPanelOpen] = useState(false);
   const [fileSource, setFileSource] = useState<"local" | "github" | null>(null);
   const [localFiles, setLocalFiles] = useState<FileItem[]>([]);
+  const [githubFiles, setGithubFiles] = useState<FileItem[]>([]);
+  const [githubFilesLoading, setGithubFilesLoading] = useState(false);
   const [localDirHandle, setLocalDirHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [openedFileContent, setOpenedFileContent] = useState<string | null>(null);
+  const [openedFileSha, setOpenedFileSha] = useState<string | null>(null);
   const [fileIsModified, setFileIsModified] = useState(false);
   const [pendingDiffs, setPendingDiffs] = useState<{ path: string; oldContent: string | null; newContent: string | null }[]>([]);
   const [changedPaths, setChangedPaths] = useState<Set<string>>(new Set());
@@ -527,16 +755,43 @@ export default function ChatPage() {
     imagePrompt: null,
   });
 
-  const handleVoiceAction = useCallback((action: VoiceAction) => {
+  const handleVoiceAction = useCallback((action: {
+    type: string;
+    path?: string;
+    mode?: "chat" | "code" | "multi-agent" | "image";
+    text?: string;
+    theme?: "dark" | "light";
+    name?: string;
+    bio?: string;
+    query?: string;
+    message?: string;
+    modal?: "profile" | "settings" | "pricing" | "mcp" | "github" | "docs";
+  }) => {
+    if (action.type === "webSearch") {
+      const prompt = `Find live information on the web: ${action.query}`;
+      setInput(prompt);
+      setTimeout(() => handleSubmitRef.current(prompt), 100);
+      return;
+    }
+
+    if (action.type === "createFile") {
+      setInput("Create a new file in the current project.");
+      return;
+    }
+
     switch (action.type) {
       case 'navigate':
         if (action.path === '__sidebar_open') setSidebarCollapsed(false);
         else if (action.path === '__sidebar_close') setSidebarCollapsed(true);
-        else navigate(action.path);
+        else if (action.path) navigate(action.path);
         break;
-      case 'setMode': setMode(action.mode); break;
+      case 'setMode':
+        if (action.mode) setMode(action.mode);
+        break;
       case 'newChat': navigate('/chat'); break;
-      case 'writePrompt': setInput(prev => prev ? prev + ' ' + action.text : action.text); break;
+      case 'writePrompt':
+        setInput(prev => prev ? `${prev} ${action.text || ""}`.trim() : (action.text || ""));
+        break;
       case 'sendChat':
         setInput(prev => {
           if (prev.trim()) setTimeout(() => handleSubmitRef.current(prev), 0);
@@ -544,31 +799,46 @@ export default function ChatPage() {
         });
         break;
       case 'logout':
-        localStorage.removeItem('belka-user');
-        localStorage.removeItem('belka-plan');
-        localStorage.removeItem('belka-card');
+        logout();
         navigate('/auth');
         break;
       case 'toggleSidebar': setSidebarCollapsed(prev => !prev); break;
       case 'clearInput': setInput(''); break;
       case 'toggleTheme': setThemeValue(theme === 'dark' ? 'light' : 'dark'); break;
-      case 'setTheme': setThemeValue(action.theme); break;
-      case 'changeName': localStorage.setItem('belka-display-name', action.name); playVoice('settings_saved'); break;
-      case 'changeBio': localStorage.setItem('belka-bio', action.bio); playVoice('settings_saved'); break;
+      case 'setTheme':
+        if (action.theme) setThemeValue(action.theme);
+        break;
+      case 'changeName':
+        if (user?.id && action.name) {
+          localStorage.setItem(`belka-display-name-${user.id}`, action.name);
+          playVoice('settings_saved');
+        }
+        break;
+      case 'changeBio':
+        if (user?.id && action.bio) {
+          localStorage.setItem(`belka-bio-${user.id}`, action.bio);
+          playVoice('settings_saved');
+        }
+        break;
       case 'micOff': break;
       case 'sendToAgent':
-        setInput(action.text);
-        setTimeout(() => handleSubmitRef.current(action.text), 100);
+        if (action.text) {
+          setInput(action.text);
+          setTimeout(() => handleSubmitRef.current(action.text!), 100);
+        }
         break;
       case 'webSearch':
         setInput(`Найди информацию в интернете: ${action.query}`);
         setTimeout(() => handleSubmitRef.current(`Найди информацию в интернете: ${action.query}`), 100);
         break;
       case 'openLocalFolder': handleOpenLocalFolder(); break;
-      case 'connectGitHub': setGithubOpen(true); break;
+      case 'connectGitHub':
+        if (isAdmin) setGithubOpen(true);
+        break;
       case 'openFilesPanel': setFilesPanelOpen(true); break;
       case 'closeFilesPanel': setFilesPanelOpen(false); break;
       case 'pushToGitHub':
+        if (!isAdmin) break;
         if (githubRepo) handlePushToGitHub(action.message || 'Update files via BELKA AI');
         else setGithubOpen(true);
         break;
@@ -580,19 +850,64 @@ export default function ChatPage() {
         if (action.modal === 'profile') setProfileOpen(true);
         else if (action.modal === 'settings') setSettingsOpen(true);
         else if (action.modal === 'pricing') setPricingOpen(true);
-        else if (action.modal === 'mcp') setMcpOpen(true);
-        else if (action.modal === 'github') setGithubOpen(true);
+        else if (action.modal === 'mcp' && isAdmin) setMcpOpen(true);
+        else if (action.modal === 'github' && isAdmin) setGithubOpen(true);
         else if (action.modal === 'docs') setDocsOpen(true);
         break;
-      case 'openTerminal': setTerminalOpen(true); break;
-      case 'openPreview': setPreviewStatusOpen(true); break;
+      case 'openTerminal':
+        if (isAdmin) setTerminalOpen(true);
+        break;
+      case 'openPreview':
+        if (isAdmin) setPreviewStatusOpen(true);
+        break;
       case 'clarify': playVoice('start_work'); break;
       case 'runPreview': {
-        setPreviewOpen(true);
+        if (isAdmin) setPreviewOpen(true);
         break;
       }
     }
-  }, [navigate, theme, setThemeValue, githubRepo, selectedFilePath, openedFileContent]);
+  }, [navigate, theme, setThemeValue, githubRepo, selectedFilePath, openedFileContent, logout, isAdmin, user?.id]);
+
+  const loadGitHubFiles = useCallback(async (
+    repoConfig: { fullName: string; branch: string },
+    nestedPath = "",
+    depth = 0,
+  ): Promise<FileItem[]> => {
+    const repoParts = splitGitHubRepoFullName(repoConfig.fullName);
+    if (!repoParts) {
+      return [];
+    }
+
+    const apiBase = buildApiUrl();
+    const suffix = nestedPath
+      ? `?path=${encodeURIComponent(nestedPath)}&branch=${encodeURIComponent(repoConfig.branch)}`
+      : `?branch=${encodeURIComponent(repoConfig.branch)}`;
+
+    const response = await apiFetch(`${apiBase}/github/repos/${repoParts.owner}/${repoParts.repo}/contents${suffix}`);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error || "Не удалось загрузить содержимое репозитория");
+    }
+
+    const files = Array.isArray(payload.files) ? payload.files : [];
+    const items = await Promise.all(files.map(async (file: any) => {
+      const item: FileItem = {
+        name: file.name,
+        path: file.path,
+        type: file.type,
+        size: file.size,
+        sha: file.sha,
+      };
+
+      if (file.type === "directory" && depth < 2) {
+        item.children = await loadGitHubFiles(repoConfig, file.path, depth + 1);
+      }
+
+      return item;
+    }));
+
+    return items;
+  }, []);
 
   const handleOpenLocalFolder = useCallback(async () => {
     const handle = await openLocalFolder();
@@ -606,33 +921,98 @@ export default function ChatPage() {
       children: f.children ? f.children.map(c => toFileItem(c, depth + 1)) : undefined,
     });
     setLocalFiles(files.map(f => toFileItem(f)));
+    setGithubFiles([]);
+    setGithubRepo(null);
+    setChangedPaths(new Set());
     setFileSource("local");
+    setSelectedFilePath(null);
+    setOpenedFileContent(null);
+    setOpenedFileSha(null);
     setFilesPanelOpen(true);
     playVoice('analyzing');
   }, []);
 
   const handleOpenFile = useCallback(async (file: FileItem) => {
-    if (!localDirHandle || file.type !== 'file') return;
+    if (file.type !== 'file') return;
     setSelectedFilePath(file.path);
+    setOpenedFileSha(file.sha || null);
+
     try {
-      const content = await readLocalFile(file.path, localDirHandle);
-      setOpenedFileContent(content || '');
+      if (fileSource === "github" && githubRepo) {
+        const repoParts = splitGitHubRepoFullName(githubRepo.fullName);
+        if (!repoParts) return;
+
+        const apiBase = buildApiUrl();
+        const response = await apiFetch(
+          `${apiBase}/github/repos/${repoParts.owner}/${repoParts.repo}/file?path=${encodeURIComponent(file.path)}&branch=${encodeURIComponent(githubRepo.branch)}`,
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.error || "Не удалось открыть файл из GitHub");
+        }
+
+        setOpenedFileContent(data.content || "");
+        setOpenedFileSha(data.sha || file.sha || null);
+      } else {
+        if (!localDirHandle) return;
+        const content = await readLocalFile(file.path, localDirHandle);
+        setOpenedFileContent(content || "");
+      }
+
       setFileIsModified(false);
-    } catch { setOpenedFileContent(''); }
-  }, [localDirHandle]);
+    } catch {
+      setOpenedFileContent("");
+      setOpenedFileSha(null);
+    }
+  }, [fileSource, githubRepo, localDirHandle]);
 
   const handleSaveFile = useCallback(async (path: string, content: string) => {
+    if (fileSource === "github" && githubRepo) {
+      const repoParts = splitGitHubRepoFullName(githubRepo.fullName);
+      if (!repoParts) return;
+
+      const apiBase = buildApiUrl();
+      const response = await apiFetch(`${apiBase}/github/repos/${repoParts.owner}/${repoParts.repo}/file`, {
+        method: "PUT",
+        headers: jsonHeaders(),
+        body: JSON.stringify({
+          path,
+          content,
+          sha: openedFileSha || undefined,
+          branch: githubRepo.branch,
+          message: `Update ${path} via BELKA AI`,
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        playVoice("start_work");
+        return;
+      }
+
+      setOpenedFileSha(data.sha || openedFileSha);
+      setChangedPaths(prev => {
+        const next = new Set(prev);
+        next.delete(path);
+        return next;
+      });
+      setFileIsModified(false);
+      playVoice("save");
+      return;
+    }
+
     if (!localDirHandle) return;
     await writeLocalFile(path, content, localDirHandle);
     setFileIsModified(false);
     playVoice('save');
-  }, [localDirHandle]);
+  }, [fileSource, githubRepo, localDirHandle, openedFileSha]);
 
   const handlePushToGitHub = useCallback(async (message: string) => {
     if (!githubRepo || !localDirHandle) return;
-    const token = localStorage.getItem("belka-token") || "";
-    const BASE = import.meta.env.BASE_URL || "/";
-    const API = `${BASE}api`.replace(/\/\/+/g, "/");
+    const repoParts = splitGitHubRepoFullName(githubRepo.fullName);
+    if (!repoParts) return;
+
+    const API = buildApiUrl();
     const filesToPush = Array.from(changedPaths);
     if (filesToPush.length === 0) { playVoice('start_work'); return; }
     const files: { path: string; content: string }[] = [];
@@ -640,9 +1020,9 @@ export default function ChatPage() {
       const c = await readLocalFile(fp, localDirHandle);
       if (c !== null) files.push({ path: fp, content: c });
     }
-    const res = await fetch(`${API}/github/repos/${encodeURIComponent(githubRepo.fullName)}/push`, {
+    const res = await apiFetch(`${API}/github/repos/${repoParts.owner}/${repoParts.repo}/push`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: jsonHeaders(),
       body: JSON.stringify({ branch: githubRepo.branch, message, files }),
     });
     const data = await res.json();
@@ -655,8 +1035,20 @@ export default function ChatPage() {
   const lastSpokenReplyRef = useRef("");
   const createConvMutation = useCreateConversation();
 
+  useEffect(() => {
+    const unsubscribe = subscribeVoiceAssistantConfig(setVoiceConfig);
+    void loadVoiceAssistantConfig();
+    return unsubscribe;
+  }, []);
+
   const { data: conversation } = useGetConversation(conversationId || "");
   const { data: messagesData, refetch: refetchMessages } = useGetMessages(conversationId || "");
+
+  useEffect(() => {
+    if (conversation?.mode) {
+      setMode(normalizeChatMode(conversation.mode));
+    }
+  }, [conversation?.id, conversation?.mode]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -718,16 +1110,11 @@ export default function ChatPage() {
       });
       lastSpokenReplyRef.current = "";
 
-      const BASE = import.meta.env.BASE_URL || "/";
-      const API = `${BASE}api`.replace(/\/\/+/g, "/");
+      const API = buildApiUrl();
 
-      const authToken = localStorage.getItem("belka-token") || "";
-      const response = await fetch(`${API}/conversations/${activeId}/messages`, {
+      const response = await apiFetch(`${API}/conversations/${activeId}/messages`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-        },
+        headers: jsonHeaders(),
         body: JSON.stringify({ content, mode, useMultiAgent: mode === "multi-agent" }),
       });
 
@@ -918,26 +1305,38 @@ export default function ChatPage() {
       />
 
       <main className="flex-1 flex flex-col relative min-w-0">
-        <header className="h-12 border-b border-border/50 flex items-center px-4 justify-between bg-background/80 backdrop-blur-md z-10 flex-shrink-0">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-sm font-medium text-foreground truncate">
-              {conversation?.title || t("newWorkspace")}
-            </span>
-            <span className="px-1.5 py-0.5 rounded text-[10px] bg-primary/10 text-primary font-mono border border-primary/20 flex-shrink-0">
-              {mode === "multi-agent" ? t("multiAgent") : mode === "image" ? t("image") : mode === "chat" ? t("chat") : t("code")}
-            </span>
+        <header className="grid min-h-[72px] items-center gap-3 border-b border-border/50 bg-background/80 px-4 py-3 backdrop-blur-md z-10 flex-shrink-0 md:grid-cols-[minmax(0,1fr)_minmax(260px,360px)_minmax(0,1fr)]">
+          <div className="min-w-0 max-md:order-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-sm font-medium text-foreground">
+                {conversation?.title || t("newWorkspace")}
+              </span>
+              <span className="flex-shrink-0 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-mono text-primary">
+                {mode === "multi-agent" ? t("multiAgent") : mode === "image" ? t("image") : mode === "chat" ? t("chat") : t("code")}
+              </span>
+            </div>
+            <div className="mt-1 text-[11px] text-muted-foreground">
+              {mode === "multi-agent" ? "Coordinated specialist workflow" : mode === "image" ? "Prompt-to-image workspace" : mode === "chat" ? "Conversational assistant mode" : "Execution-first coding surface"}
+            </div>
           </div>
-          <div className="flex items-center gap-1.5 flex-shrink-0">
+
+          <div className="max-md:order-3 max-md:col-span-full">
+            <VoiceCommandDock voiceAssistant={voiceAssistant} voiceConfig={voiceConfig} />
+          </div>
+
+          <div className="flex flex-wrap items-center justify-end gap-1.5 max-md:order-2 max-md:justify-start">
+            {isAdmin && (
+              <>
             <button onClick={() => setMcpOpen(true)} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" title="MCP Servers">
               <Plug size={14} />
             </button>
             <button onClick={() => setTerminalOpen(prev => !prev)} className={`p-1.5 rounded-lg transition-colors ${terminalOpen ? "bg-emerald-500/20 text-emerald-400" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`} title="Terminal">
               <TerminalSquare size={14} />
             </button>
-            <button onClick={() => setPreviewStatusOpen(prev => !prev)} className={`p-1.5 rounded-lg transition-colors ${previewStatusOpen ? "bg-blue-500/20 text-blue-400" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`} title="Preview Server">
+            <button onClick={() => setPreviewStatusOpen(prev => !prev)} className={`p-1.5 rounded-lg transition-colors ${previewStatusOpen ? "bg-accent/20 text-accent-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`} title="Preview Server">
               <Server size={14} />
             </button>
-            <button onClick={() => setWorkspacePickerOpen(true)} className={`p-1.5 rounded-lg transition-colors ${workspacePath ? "bg-violet-500/20 text-violet-400" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`} title="Рабочая папка">
+            <button onClick={() => setWorkspacePickerOpen(true)} className={`p-1.5 rounded-lg transition-colors ${workspacePath ? "bg-secondary/20 text-secondary" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`} title="Workspace folder">
               <FolderOpen size={14} />
             </button>
             <div className="h-4 w-px bg-border/50 mx-0.5" />
@@ -946,13 +1345,15 @@ export default function ChatPage() {
               <Github size={14} />
               <span className="hidden sm:inline">{githubRepo ? githubRepo.fullName.split('/')[1] : 'GitHub'}</span>
             </button>
+              </>
+            )}
             {filesPanelOpen ? (
-              <button onClick={() => setFilesPanelOpen(false)} title="Закрыть файловую панель"
+              <button onClick={() => setFilesPanelOpen(false)} title="Close files panel"
                 className="flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg text-primary bg-primary/10 border border-primary/20 transition-colors">
                 <PanelRightClose size={14} />
               </button>
-            ) : localFiles.length > 0 && (
-              <button onClick={() => setFilesPanelOpen(true)} title="Открыть файловую панель"
+            ) : ((fileSource === "github" ? githubFiles.length : localFiles.length) > 0) && (
+              <button onClick={() => setFilesPanelOpen(true)} title="Open files panel"
                 className="flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 border border-transparent hover:border-border/50 transition-colors">
                 <PanelRight size={14} />
               </button>
@@ -968,24 +1369,80 @@ export default function ChatPage() {
         </header>
 
         <div className="flex flex-1 min-h-0">
-          <div className="flex-1 overflow-y-auto pb-36 px-4 md:px-6 lg:px-16 w-full">
+          <div className="flex-1 overflow-y-auto pb-40 px-4 md:px-6 xl:px-12 w-full">
             {messages.length === 0 && !streaming.isStreaming ? (
-              <div className="h-full flex flex-col items-center justify-center text-center max-w-lg mx-auto p-4">
-                <AgentAvatar role={AgentRole.coder} className="w-16 h-16 mb-4" isPulsing />
-                <ShinyText as="h2" className="text-xl sm:text-2xl font-display font-bold mb-2">
-                  {t("whatBuilding")}
-                </ShinyText>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {t("describeProject")}
-                </p>
+              <div className="mx-auto flex h-full w-full max-w-[980px] items-center justify-center py-8">
+                <div className="section-shell w-full p-6 sm:p-8">
+                  <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+                    <div>
+                      <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.16em] text-primary">
+                        <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                        BELKA workspace
+                      </div>
+                      <ShinyText as="h2" className="mb-3 text-2xl font-display font-bold sm:text-3xl">
+                        Build with calm focus, not noisy agent clutter
+                      </ShinyText>
+                      <p className="max-w-2xl text-sm leading-7 text-muted-foreground sm:text-base">
+                        Use chat for quick guidance, code mode for execution, and multi-agent mode when the task needs research, verification, and delivery in parallel.
+                      </p>
+                      <AgentActivityRail mode={mode} className="mt-5" />
+                      <div className="mt-5 flex flex-wrap gap-2">
+                        {CHAT_STARTERS.map((starter) => (
+                          <button
+                            key={starter.label}
+                            type="button"
+                            onClick={() => {
+                              setMode(starter.mode);
+                              setInput(starter.prompt);
+                            }}
+                            className="rounded-2xl border border-border/70 bg-card/70 px-4 py-3 text-left transition-colors hover:border-primary/25 hover:bg-primary/10"
+                          >
+                            <div className="text-sm font-semibold text-foreground">{starter.label}</div>
+                            <div className="mt-1 max-w-xs text-xs leading-6 text-muted-foreground">{starter.prompt}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="brand-shell rounded-[30px] p-[1px]">
+                      <div className="rounded-[29px] border border-border/70 bg-card/80 p-5">
+                        <div className="mb-4 flex items-center justify-between">
+                          <div>
+                            <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Agent lineup</div>
+                            <div className="mt-1 text-base font-semibold text-foreground">Visible work, readable progress</div>
+                          </div>
+                          <span className="rounded-full border border-secondary/20 bg-secondary/10 px-3 py-1 text-[11px] font-medium text-secondary">
+                            {mode === "multi-agent" ? "Multi-agent ready" : "Voice + tool aware"}
+                          </span>
+                        </div>
+
+                        <div className="space-y-3">
+                          {[
+                            { role: AgentRole.coder, title: "Coder", note: "Implements changes and validates the result." },
+                            { role: AgentRole.reviewer, title: "Reviewer", note: "Checks regressions, edge cases, and output quality." },
+                            { role: AgentRole.designer, title: "Designer", note: "Keeps the interface aligned, balanced, and premium." },
+                          ].map((item) => (
+                            <div key={item.title} className="flex items-center gap-3 rounded-[22px] border border-border/70 bg-background/70 p-3">
+                              <AgentAvatar role={item.role} className="h-10 w-10" isPulsing />
+                              <div>
+                                <div className="text-sm font-semibold text-foreground">{item.title}</div>
+                                <div className="text-xs leading-5 text-muted-foreground">{item.note}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             ) : (
-              <div className="max-w-3xl mx-auto space-y-4 pt-4">
+              <div className="mx-auto max-w-[920px] space-y-5 pt-5">
                 {messages.map((msg: any, i: number) => (
                   <MessageBubble key={msg.id || i} msg={msg} isLast={i === messages.length - 1} isStreaming={streaming.isStreaming && i === messages.length - 1 && msg.role !== "user"} onImagePreview={setImagePreviewUrl} />
                 ))}
 
-                {streaming.isStreaming && <StreamingIndicator state={streaming} />}
+                {streaming.isStreaming && <StreamingIndicator state={streaming} mode={mode} />}
 
                 <div ref={messagesEndRef} />
               </div>
@@ -997,16 +1454,16 @@ export default function ChatPage() {
               <div className="h-10 border-b border-border/50 flex items-center justify-between px-3 flex-shrink-0">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-medium">
-                    {fileSource === 'github' ? githubRepo?.fullName : 'Локальный проект'}
+                    {fileSource === 'github' ? githubRepo?.fullName : 'Local workspace'}
                   </span>
                   {changedPaths.size > 0 && (
                     <span className="text-[10px] bg-yellow-400/20 text-yellow-400 border border-yellow-400/30 px-1.5 py-0.5 rounded-full">
-                      {changedPaths.size} изм.
+                      {changedPaths.size} changed
                     </span>
                   )}
                 </div>
                 <div className="flex items-center gap-1">
-                  {githubRepo && changedPaths.size > 0 && (
+                  {fileSource === "local" && githubRepo && changedPaths.size > 0 && (
                     <button onClick={() => handlePushToGitHub('Update via BELKA AI')} title="Push to GitHub"
                       className="flex items-center gap-1 text-[10px] px-2 py-1 bg-green-500/20 text-green-400 hover:bg-green-500/30 rounded-lg border border-green-500/30 transition-colors">
                       <Upload size={10} /> Push
@@ -1022,11 +1479,11 @@ export default function ChatPage() {
                 <div className="flex flex-col flex-1 min-h-0">
                   <div className="h-8 border-b border-border/50 flex items-center px-3 gap-2 flex-shrink-0">
                     <button onClick={() => { setSelectedFilePath(null); setOpenedFileContent(null); }}
-                      className="text-muted-foreground hover:text-foreground text-xs">← Назад</button>
+                      className="text-muted-foreground hover:text-foreground text-xs">← Back</button>
                     <span className="text-[10px] text-muted-foreground truncate flex-1">{selectedFilePath}</span>
                     {fileIsModified && (
                       <button onClick={() => handleSaveFile(selectedFilePath, openedFileContent)}
-                        className="text-[10px] px-2 py-0.5 bg-primary/20 text-primary rounded border border-primary/30">Сохранить</button>
+                        className="text-[10px] px-2 py-0.5 bg-primary/20 text-primary rounded border border-primary/30">Save</button>
                     )}
                   </div>
                   <CodeEditor
@@ -1039,7 +1496,7 @@ export default function ChatPage() {
                 </div>
               ) : (
                 <FileExplorer
-                  files={localFiles}
+                  files={fileSource === "github" ? githubFiles : localFiles}
                   onSelectFile={(path) => {
                     const findFile = (items: FileItem[], p: string): FileItem | null => {
                       for (const f of items) {
@@ -1048,23 +1505,45 @@ export default function ChatPage() {
                       }
                       return null;
                     };
-                    const f = findFile(localFiles, path);
+                    const sourceFiles = fileSource === "github" ? githubFiles : localFiles;
+                    const f = findFile(sourceFiles, path);
                     if (f) handleOpenFile(f);
                   }}
                   changedPaths={changedPaths}
                   source={fileSource}
                   githubRepo={githubRepo?.fullName}
                   githubBranch={githubRepo?.branch}
+                  isLoading={githubFilesLoading}
+                  onRefresh={() => {
+                    if (fileSource === "github" && githubRepo) {
+                      setGithubFilesLoading(true);
+                      void loadGitHubFiles(githubRepo)
+                        .then(setGithubFiles)
+                        .finally(() => setGithubFilesLoading(false));
+                    } else if (localDirHandle) {
+                      void listLocalFiles(localDirHandle).then((files) => {
+                        const toFileItem = (f: LocalFile, depth = 0): FileItem => ({
+                          name: f.name, path: f.path, type: f.type, size: f.size,
+                          language: f.type === 'file' ? getLanguageFromFilename(f.name) : undefined,
+                          icon: f.type === 'file' ? getFileIcon(f.name) : undefined,
+                          children: f.children ? f.children.map(c => toFileItem(c, depth + 1)) : undefined,
+                        });
+                        setLocalFiles(files.map(f => toFileItem(f)));
+                      });
+                    }
+                  }}
                   onOpenLocalFolder={handleOpenLocalFolder}
-                  onConnectGitHub={() => setGithubOpen(true)}
+                  onConnectGitHub={() => {
+                    if (isAdmin) setGithubOpen(true);
+                  }}
                 />
               )}
             </div>
           )}
         </div>
 
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-background via-background to-transparent pt-8 pb-3 px-4 md:px-6 lg:px-16">
-          <div className="max-w-3xl mx-auto">
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-background via-background to-transparent px-4 pb-4 pt-10 md:px-6 xl:px-12">
+          <div className="mx-auto max-w-[920px]">
             {attachedFile && (
               <div className="mb-1.5 flex items-center gap-2 w-fit">
                 {attachedPreview ? (
@@ -1088,7 +1567,30 @@ export default function ChatPage() {
                 )}
               </div>
             )}
-            <div className="glass-panel rounded-xl p-1.5 flex flex-col shadow-xl border border-border focus-within:border-primary/50 transition-all duration-300">
+            <div className="composer-shell rounded-[30px] border border-border/70 p-2 shadow-[0_26px_50px_rgba(0,0,0,0.16)] transition-all duration-300 focus-within:border-primary/35">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-2 pt-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full border border-border/70 bg-card/70 px-3 py-1 text-[11px] font-medium text-foreground/85">
+                    {mode === "multi-agent" ? "Coordinated agent run" : mode === "image" ? "Image generation flow" : mode === "chat" ? "Conversational guidance" : "Implementation surface"}
+                  </span>
+                  {streaming.isStreaming ? (
+                    <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary">
+                      BELKA is working
+                    </span>
+                  ) : voiceAssistant.isActive ? (
+                    <span className="rounded-full border border-secondary/20 bg-secondary/10 px-3 py-1 text-[11px] font-medium text-secondary">
+                      Voice dock active
+                    </span>
+                  ) : (
+                    <span className="rounded-full border border-border/70 bg-card/70 px-3 py-1 text-[11px] font-medium text-muted-foreground">
+                      Uploads stay hidden until the backend upload route is real
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  Shift+Enter for a new line
+                </div>
+              </div>
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -1099,15 +1601,15 @@ export default function ChatPage() {
                   }
                 }}
                 placeholder={t("messagePlaceholder")}
-                className="w-full bg-transparent border-none resize-none px-3 py-2 min-h-[44px] max-h-[140px] text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-0"
+                className="w-full resize-none border-none bg-transparent px-3 py-2 text-sm leading-7 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-0 min-h-[68px] max-h-[180px]"
                 style={{ outline: "none", boxShadow: "none", WebkitAppearance: "none" }}
-                rows={1}
+                rows={2}
                 disabled={streaming.isStreaming}
               />
 
-              <div className="flex items-center justify-between px-1.5 pb-0.5 pt-1">
-                <div className="flex items-center gap-0.5">
-                  <input ref={fileInputRef} type="file" className="hidden" onChange={(e) => {
+              <div className="flex flex-wrap items-center justify-between gap-3 px-1.5 pb-1 pt-1">
+                <div className="flex items-center gap-1">
+                  <input ref={fileInputRef} type="file" className="hidden" disabled={!fileAttachmentsEnabled} onChange={(e) => {
                     const f = e.target.files?.[0];
                     if (f) {
                       setAttachedFile(f);
@@ -1120,48 +1622,36 @@ export default function ChatPage() {
                       }
                     }
                   }} />
-                  <button onClick={() => fileInputRef.current?.click()} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors" title="Attach file">
+                  <button
+                    onClick={() => {
+                      if (fileAttachmentsEnabled) fileInputRef.current?.click();
+                    }}
+                    disabled={!fileAttachmentsEnabled}
+                    className={`p-1.5 rounded-lg transition-colors ${fileAttachmentsEnabled ? "text-muted-foreground hover:text-foreground hover:bg-muted" : "text-muted-foreground/40 cursor-not-allowed"}`}
+                    title={fileAttachmentsEnabled ? "Attach file" : "File uploads are not enabled yet"}
+                  >
                     <Paperclip size={16} />
                   </button>
                   <ModeSwitcher mode={mode} setMode={setMode} />
                 </div>
 
-                <div className="flex items-center gap-1.5">
-                  {voiceAssistant.isActive && voiceAssistant.lastTranscript && (
-                    <div className="text-[10px] text-muted-foreground/70 max-w-[140px] truncate animate-pulse">
-                      {voiceAssistant.lastTranscript}
-                    </div>
-                  )}
+                <div className="flex items-center gap-2">
                   {voiceAssistant.isDictating && (
-                    <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 text-[10px] font-medium animate-pulse">
-                      <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
-                      ДИКТОВКА
+                    <div className="flex items-center gap-1 rounded-full border border-[#F97316]/25 bg-[#F97316]/10 px-3 py-1 text-[11px] font-medium text-[#F97316]">
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#F97316] animate-pulse" />
+                      Dictation live
                     </div>
                   )}
-                  <button
-                    onClick={voiceAssistant.toggle}
-                    className={`relative p-2 rounded-lg transition-all ${
-                      voiceAssistant.isDictating
-                        ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 ring-1 ring-red-500/40'
-                        : voiceAssistant.isActive
-                          ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30 ring-1 ring-green-500/40'
-                          : 'bg-secondary/10 text-secondary hover:bg-secondary/20'
-                    }`}
-                    title={voiceAssistant.isDictating ? 'Режим диктовки' : voiceAssistant.isActive ? 'Voice Assistant ON' : 'Voice Assistant OFF'}
-                  >
-                    {voiceAssistant.isActive ? <Mic size={16} /> : <MicOff size={16} />}
-                    {voiceAssistant.isActive && (
-                      <span className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full animate-pulse ${voiceAssistant.isDictating ? 'bg-red-400' : 'bg-green-400'}`} />
-                    )}
-                  </button>
                   <button
                     onClick={() => handleSubmit(input)}
                     disabled={!input.trim() || streaming.isStreaming}
-                    className="p-2 rounded-lg belka-gradient text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-primary/20"
+                    className="inline-flex items-center gap-2 rounded-2xl belka-gradient px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 transition-all disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Send size={16} className={streaming.isStreaming ? "animate-pulse" : ""} />
+                    Send
                   </button>
                 </div>
+
               </div>
             </div>
             <div className="text-center mt-2 text-[10px] text-muted-foreground/50 font-mono">
@@ -1212,6 +1702,16 @@ export default function ChatPage() {
         onSelectRepo={(repo) => {
           setGithubRepo(repo);
           setFileSource("github");
+          setLocalDirHandle(null);
+          setLocalFiles([]);
+          setChangedPaths(new Set());
+          setGithubFilesLoading(true);
+          void loadGitHubFiles(repo)
+            .then(setGithubFiles)
+            .finally(() => setGithubFilesLoading(false));
+          setSelectedFilePath(null);
+          setOpenedFileContent(null);
+          setOpenedFileSha(null);
           setFilesPanelOpen(true);
         }}
       />
@@ -1293,15 +1793,15 @@ function MessageBubble({ msg, isLast, isStreaming, onImagePreview }: {
         )}
 
         {sources.length > 0 && (
-          <div className="glass-panel px-3 py-2 rounded-2xl rounded-tl-sm mb-1 w-full">
+          <div className="glass-panel mb-1 w-full rounded-[24px] rounded-tl-[10px] border border-border/70 px-3 py-3">
             <div className="flex items-center gap-1.5 mb-1">
-              <Globe size={12} className="text-blue-400" />
-              <span className="text-[10px] font-semibold text-blue-400 uppercase tracking-wider">Источники</span>
+              <Globe size={12} className="text-accent" />
+              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">Sources</span>
             </div>
             <div className="flex flex-wrap gap-1.5">
               {sources.map((src: any, i: number) => (
                 <a key={i} href={src.url} target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20 text-[11px] text-blue-300 hover:bg-blue-500/20 hover:text-blue-200 transition-colors max-w-[200px] truncate"
+                  className="flex max-w-[220px] items-center gap-1 rounded-xl border border-accent/20 bg-accent/10 px-2.5 py-1.5 text-[11px] text-foreground/85 transition-colors hover:border-primary/25 hover:bg-primary/10 hover:text-foreground truncate"
                   title={src.title}>
                   <ExternalLink size={10} className="flex-shrink-0" />
                   <span className="truncate">{src.title || new URL(src.url).hostname}</span>
@@ -1312,10 +1812,10 @@ function MessageBubble({ msg, isLast, isStreaming, onImagePreview }: {
         )}
 
         {imageUrl && !isUser && (
-          <div className="glass-panel px-3 py-2 rounded-2xl rounded-tl-sm mb-1 w-full">
+          <div className="glass-panel mb-1 w-full rounded-[24px] rounded-tl-[10px] border border-border/70 px-3 py-3">
             <div className="flex items-center gap-1.5 mb-2">
-              <ImageIcon size={12} className="text-violet-400" />
-              <span className="text-[10px] font-semibold text-violet-400 uppercase tracking-wider">Изображение</span>
+              <ImageIcon size={12} className="text-secondary" />
+              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-secondary">Image</span>
             </div>
             <div className="relative group/img rounded-xl overflow-hidden">
               <img

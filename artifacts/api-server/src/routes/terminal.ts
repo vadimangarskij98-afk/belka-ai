@@ -1,7 +1,8 @@
 import { Router, type Request, type Response } from "express";
 import { spawnSync } from "child_process";
 import os from "os";
-import { getWorkspace } from "../lib/workspace-state";
+import path from "path";
+import { resolveWorkspaceCwd } from "../lib/workspace-state";
 
 const router = Router();
 
@@ -20,6 +21,7 @@ function isCommandSafe(command: string): boolean {
 
 interface TerminalSession {
   id: string;
+  userId: number;
   cwd: string;
   alive: boolean;
 }
@@ -28,6 +30,14 @@ const sessions = new Map<string, TerminalSession>();
 
 function getRouteParam(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : (value ?? "");
+}
+
+function getRequiredUserId(req: Request): number {
+  if (!req.userId) {
+    throw new Error("userId missing on authenticated route");
+  }
+
+  return req.userId;
 }
 
 function runShellCommand(command: string, cwd: string) {
@@ -62,11 +72,13 @@ function runShellCommand(command: string, cwd: string) {
 }
 
 router.post("/terminal/exec", (req: Request, res: Response) => {
+  const userId = getRequiredUserId(req);
   const { command, cwd } = req.body;
   if (!command) { res.status(400).json({ error: "command required" }); return; }
   if (!isCommandSafe(command)) { res.status(403).json({ error: "command blocked for safety" }); return; }
 
-  const workDir = cwd || getWorkspace();
+  const workDir = resolveWorkspaceCwd(userId, cwd);
+  if (!workDir) { res.status(403).json({ error: "cwd outside workspace" }); return; }
 
   try {
     const result = runShellCommand(command, workDir);
@@ -87,19 +99,23 @@ router.post("/terminal/exec", (req: Request, res: Response) => {
 });
 
 router.post("/terminal/create", (req: Request, res: Response) => {
+  const userId = getRequiredUserId(req);
   const { cwd } = req.body;
   const id = `term-${Date.now()}`;
-  const workDir = cwd || getWorkspace();
+  const workDir = resolveWorkspaceCwd(userId, cwd);
+  if (!workDir) { res.status(403).json({ error: "cwd outside workspace" }); return; }
 
-  const session: TerminalSession = { id, cwd: workDir, alive: true };
+  const session: TerminalSession = { id, userId, cwd: workDir, alive: true };
   sessions.set(id, session);
   res.json({ id, cwd: workDir });
 });
 
 router.post("/terminal/:id/write", (req: Request, res: Response) => {
+  const userId = getRequiredUserId(req);
   const sessionId = getRouteParam(req.params.id);
   const session = sessions.get(sessionId);
   if (!session) { res.status(404).json({ error: "session not found" }); return; }
+  if (session.userId !== userId) { res.status(403).json({ error: "session access denied" }); return; }
 
   const { command } = req.body;
   if (!command) { res.status(400).json({ error: "command required" }); return; }
@@ -114,10 +130,12 @@ router.post("/terminal/:id/write", (req: Request, res: Response) => {
 
     if (command.startsWith("cd ")) {
       const newDir = command.slice(3).trim();
-      const resolved = require("path").resolve(session.cwd, newDir);
+      const resolved = resolveWorkspaceCwd(userId, path.resolve(session.cwd, newDir));
       try {
-        const stats = require("fs").statSync(resolved);
-        if (stats.isDirectory()) session.cwd = resolved;
+        if (resolved) {
+          const stats = require("fs").statSync(resolved);
+          if (stats.isDirectory()) session.cwd = resolved;
+        }
       } catch {}
     }
 
@@ -130,7 +148,12 @@ router.post("/terminal/:id/write", (req: Request, res: Response) => {
 });
 
 router.delete("/terminal/:id", (req: Request, res: Response) => {
-  sessions.delete(getRouteParam(req.params.id));
+  const userId = getRequiredUserId(req);
+  const sessionId = getRouteParam(req.params.id);
+  const session = sessions.get(sessionId);
+  if (!session) { res.json({ success: true }); return; }
+  if (session.userId !== userId) { res.status(403).json({ error: "session access denied" }); return; }
+  sessions.delete(sessionId);
   res.json({ success: true });
 });
 

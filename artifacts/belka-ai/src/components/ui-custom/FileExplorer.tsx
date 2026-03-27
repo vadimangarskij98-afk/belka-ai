@@ -44,7 +44,7 @@ function StatusBadge({ status }: { status?: FileItem["status"] }) {
     ? "bg-green-500/20 text-green-400 border-green-500/30"
     : status === "deleted"
     ? "bg-red-500/20 text-red-400 border-red-500/30"
-    : "bg-blue-500/20 text-blue-400 border-blue-500/30";
+    : "border-primary/30 bg-primary/10 text-primary";
   const label = status === "added" ? "A" : status === "deleted" ? "D" : "M";
   return (
     <span className={`text-[9px] px-1 py-0.5 rounded border font-mono ${cls}`}>{label}</span>
@@ -100,7 +100,7 @@ function FileNode({
     : item.status === "deleted"
     ? "text-red-400 line-through opacity-60"
     : item.status === "modified" || isChanged
-    ? "text-blue-400"
+    ? "text-primary"
     : "";
 
   return (
@@ -290,7 +290,7 @@ export function FileExplorer({
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
             {changedPaths && changedPaths.size > 0 && (
-              <span className="text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded-full border border-blue-500/30">
+              <span className="rounded-full border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
                 {changedPaths.size} изм.
               </span>
             )}

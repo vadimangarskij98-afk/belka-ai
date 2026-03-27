@@ -13,12 +13,17 @@ export default function AuthPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const { login, register, loading } = useAuth();
   const [, navigate] = useLocation();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading || submitting) return;
+
     setError("");
+    setSubmitting(true);
+
     try {
       if (mode === "login") {
         await login(email, password);
@@ -28,6 +33,8 @@ export default function AuthPage() {
       window.location.href = import.meta.env.BASE_URL + "chat";
     } catch (err: any) {
       setError(err.message || "Error");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -65,12 +72,14 @@ export default function AuthPage() {
         >
           <div className="flex mb-6 rounded-xl overflow-hidden border border-border">
             <button
+              type="button"
               onClick={() => setMode("login")}
               className={`flex-1 py-3 text-sm font-semibold transition-all ${mode === "login" ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground"}`}
             >
               {t("login")}
             </button>
             <button
+              type="button"
               onClick={() => setMode("register")}
               className={`flex-1 py-3 text-sm font-semibold transition-all ${mode === "register" ? "bg-primary text-white" : "text-muted-foreground hover:text-foreground"}`}
             >
@@ -79,7 +88,12 @@ export default function AuthPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-3 mb-6">
-            <button className="flex items-center justify-center gap-2 py-3 rounded-xl border border-border hover:bg-muted transition-colors text-sm font-medium text-foreground">
+            <button
+              type="button"
+              disabled
+              title="Soon"
+              className="flex items-center justify-center gap-2 py-3 rounded-xl border border-border text-sm font-medium text-muted-foreground/60 cursor-not-allowed opacity-70"
+            >
               <svg width="18" height="18" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
                 <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -88,7 +102,12 @@ export default function AuthPage() {
               </svg>
               {t("google")}
             </button>
-            <button className="flex items-center justify-center gap-2 py-3 rounded-xl border border-border hover:bg-muted transition-colors text-sm font-medium text-foreground">
+            <button
+              type="button"
+              disabled
+              title="Soon"
+              className="flex items-center justify-center gap-2 py-3 rounded-xl border border-border text-sm font-medium text-muted-foreground/60 cursor-not-allowed opacity-70"
+            >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
               </svg>
@@ -117,6 +136,8 @@ export default function AuthPage() {
               <Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="email"
+                name="email"
+                autoComplete="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -130,6 +151,8 @@ export default function AuthPage() {
                 <User size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <input
                   type="text"
+                  name="username"
+                  autoComplete="username"
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
@@ -143,6 +166,8 @@ export default function AuthPage() {
               <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="password"
+                name="password"
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -153,7 +178,7 @@ export default function AuthPage() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || submitting}
               className="w-full py-3 rounded-xl bg-primary text-white font-semibold flex items-center justify-center gap-2 hover:bg-primary/90 disabled:opacity-50 transition-all shadow-lg shadow-primary/20"
             >
               {mode === "login" ? t("login") : t("register")}

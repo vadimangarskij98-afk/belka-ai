@@ -41,6 +41,9 @@ function PageLoader() {
 
 function AdminGuard({ component: Component }: { component: React.ComponentType }) {
   const auth = useAuth();
+  if (auth.loading) {
+    return <PageLoader />;
+  }
   if (!auth.user || auth.user.role !== "admin") {
     return <Redirect to="/chat" />;
   }
@@ -49,7 +52,10 @@ function AdminGuard({ component: Component }: { component: React.ComponentType }
 
 function AuthGuard({ component: Component }: { component: React.ComponentType }) {
   const auth = useAuth();
-  if (!auth.user || !auth.token) {
+  if (auth.loading) {
+    return <PageLoader />;
+  }
+  if (!auth.user) {
     return <Redirect to="/auth" />;
   }
   return <Component />;

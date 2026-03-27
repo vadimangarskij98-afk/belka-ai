@@ -1,4 +1,6 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
+import { db, usersTable, voiceAssistantSettingsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 import {
   ELEVENLABS_API_KEY,
   POLLINATIONS_API_BASE_URL,
@@ -13,6 +15,7 @@ const router: IRouter = Router();
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT = 40;
 const RATE_WINDOW = 60_000;
+const VOICE_SETTINGS_SCOPE = "global";
 
 type ConcreteVoiceProvider = Exclude<VoiceProvider, "auto" | "browser">;
 type VoicePresetId = "jarvis_ru" | "operator_ru" | "warm_ru" | "calm_ru";
@@ -57,13 +60,26 @@ interface ProviderStatus {
   default: boolean;
 }
 
+interface VoiceAssistantConfigPayload {
+  provider: VoiceProvider;
+  preset: string;
+  voiceEnabled: boolean;
+  dictationEnabled: boolean;
+  autoSpeakSteps: boolean;
+  autoSpeakReplies: boolean;
+  routeUnknownCommandsToAgent: boolean;
+  echoGuardEnabled: boolean;
+  echoGuardDelayMs: number;
+  replyMaxChars: number;
+}
+
 const ELEVENLABS_FALLBACK_VOICE = "EXAVITQu4vr4xnSDxMaL";
 
 const VOICE_PRESETS: Record<VoicePresetId, VoicePreset> = {
   jarvis_ru: {
     id: "jarvis_ru",
     name: "Jarvis RU",
-    description: "Плотный и собранный голос для команд, статусов и коротких ответов.",
+    description: "Dense cinematic voice for commands, status updates, and short high-confidence replies.",
     provider: "pollinations",
     model: "elevenlabs",
     voice: "onyx",
@@ -72,7 +88,7 @@ const VOICE_PRESETS: Record<VoicePresetId, VoicePreset> = {
   operator_ru: {
     id: "operator_ru",
     name: "Operator RU",
-    description: "Чёткий голос для интерфейса, подсказок и навигации по проекту.",
+    description: "Sharper interface voice for navigation, confirmations, and quick task routing.",
     provider: "pollinations",
     model: "elevenlabs",
     voice: "nova",
@@ -81,7 +97,7 @@ const VOICE_PRESETS: Record<VoicePresetId, VoicePreset> = {
   warm_ru: {
     id: "warm_ru",
     name: "Warm RU",
-    description: "Более мягкий голос для длительных ответов и пояснений.",
+    description: "Softer delivery for explanations, onboarding, and longer spoken answers.",
     provider: "pollinations",
     model: "elevenlabs",
     voice: "rachel",
@@ -90,7 +106,7 @@ const VOICE_PRESETS: Record<VoicePresetId, VoicePreset> = {
   calm_ru: {
     id: "calm_ru",
     name: "Calm RU",
-    description: "Спокойный рабочий голос для code-review и длительных сессий.",
+    description: "Balanced long-session voice for reviews, debugging, and focused work.",
     provider: "pollinations",
     model: "elevenlabs",
     voice: "sage",
@@ -127,6 +143,11 @@ function clampSpeed(value: number | undefined, fallback: number): number {
   return Math.min(1.2, Math.max(0.75, value));
 }
 
+function clampInteger(value: unknown, min: number, max: number, fallback: number): number {
+  if (typeof value !== "number" || Number.isNaN(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
 function buildAudioUrl(buffer: Buffer, contentType: string): string {
   return `data:${contentType};base64,${buffer.toString("base64")}`;
 }
@@ -144,6 +165,120 @@ function getDefaultPreset(): VoicePreset {
 function resolvePreset(presetId: string | undefined): VoicePreset {
   if (!presetId) return getDefaultPreset();
   return VOICE_PRESETS[presetId as VoicePresetId] ?? getDefaultPreset();
+}
+
+function getDefaultSettings(): VoiceAssistantConfigPayload {
+  return {
+    provider: VOICE_PROVIDER_DEFAULT,
+    preset: getDefaultPreset().id,
+    voiceEnabled: true,
+    dictationEnabled: true,
+    autoSpeakSteps: true,
+    autoSpeakReplies: true,
+    routeUnknownCommandsToAgent: true,
+    echoGuardEnabled: true,
+    echoGuardDelayMs: 900,
+    replyMaxChars: 360,
+  };
+}
+
+function normalizeSettingsPayload(input: Partial<VoiceAssistantConfigPayload> | null | undefined): VoiceAssistantConfigPayload {
+  const defaults = getDefaultSettings();
+  const provider = typeof input?.provider === "string"
+    ? input.provider.trim().toLowerCase() as VoiceProvider
+    : defaults.provider;
+  const normalizedPreset = typeof input?.preset === "string" && input.preset.trim()
+    ? input.preset.trim()
+    : defaults.preset;
+  const preset = resolvePreset(normalizedPreset).id;
+  const allowedProviders = new Set<VoiceProvider>(["auto", "pollinations", "elevenlabs", "browser"]);
+
+  return {
+    provider: allowedProviders.has(provider) ? provider : defaults.provider,
+    preset,
+    voiceEnabled: input?.voiceEnabled ?? defaults.voiceEnabled,
+    dictationEnabled: input?.dictationEnabled ?? defaults.dictationEnabled,
+    autoSpeakSteps: input?.autoSpeakSteps ?? defaults.autoSpeakSteps,
+    autoSpeakReplies: input?.autoSpeakReplies ?? defaults.autoSpeakReplies,
+    routeUnknownCommandsToAgent: input?.routeUnknownCommandsToAgent ?? defaults.routeUnknownCommandsToAgent,
+    echoGuardEnabled: input?.echoGuardEnabled ?? defaults.echoGuardEnabled,
+    echoGuardDelayMs: clampInteger(input?.echoGuardDelayMs, 300, 3000, defaults.echoGuardDelayMs),
+    replyMaxChars: clampInteger(input?.replyMaxChars, 120, 1400, defaults.replyMaxChars),
+  };
+}
+
+async function ensureVoiceSettingsRecord() {
+  const existing = await db.select()
+    .from(voiceAssistantSettingsTable)
+    .where(eq(voiceAssistantSettingsTable.scope, VOICE_SETTINGS_SCOPE))
+    .limit(1);
+
+  if (existing[0]) {
+    return existing[0];
+  }
+
+  const defaults = getDefaultSettings();
+  const inserted = await db.insert(voiceAssistantSettingsTable)
+    .values({
+      scope: VOICE_SETTINGS_SCOPE,
+      ...defaults,
+    })
+    .returning();
+
+  return inserted[0];
+}
+
+async function getStoredVoiceSettings(): Promise<VoiceAssistantConfigPayload> {
+  const row = await ensureVoiceSettingsRecord();
+
+  return normalizeSettingsPayload({
+    provider: row.provider as VoiceProvider,
+    preset: row.preset,
+    voiceEnabled: row.voiceEnabled,
+    dictationEnabled: row.dictationEnabled,
+    autoSpeakSteps: row.autoSpeakSteps,
+    autoSpeakReplies: row.autoSpeakReplies,
+    routeUnknownCommandsToAgent: row.routeUnknownCommandsToAgent,
+    echoGuardEnabled: row.echoGuardEnabled,
+    echoGuardDelayMs: row.echoGuardDelayMs,
+    replyMaxChars: row.replyMaxChars,
+  });
+}
+
+async function saveStoredVoiceSettings(req: Request, payload: Partial<VoiceAssistantConfigPayload>) {
+  const normalized = normalizeSettingsPayload(payload);
+
+  const updated = await db.insert(voiceAssistantSettingsTable)
+    .values({
+      scope: VOICE_SETTINGS_SCOPE,
+      ...normalized,
+      updatedByUserId: req.userId ?? null,
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: voiceAssistantSettingsTable.scope,
+      set: {
+        ...normalized,
+        updatedByUserId: req.userId ?? null,
+        updatedAt: new Date(),
+      },
+    })
+    .returning();
+
+  const row = updated[0];
+
+  return normalizeSettingsPayload({
+    provider: row.provider as VoiceProvider,
+    preset: row.preset,
+    voiceEnabled: row.voiceEnabled,
+    dictationEnabled: row.dictationEnabled,
+    autoSpeakSteps: row.autoSpeakSteps,
+    autoSpeakReplies: row.autoSpeakReplies,
+    routeUnknownCommandsToAgent: row.routeUnknownCommandsToAgent,
+    echoGuardEnabled: row.echoGuardEnabled,
+    echoGuardDelayMs: row.echoGuardDelayMs,
+    replyMaxChars: row.replyMaxChars,
+  });
 }
 
 function getConfiguredProviders(): ConcreteVoiceProvider[] {
@@ -334,6 +469,16 @@ function buildProviderStatuses(pollinationsReachable: boolean, elevenlabsReachab
   ];
 }
 
+async function isAdminUser(userId: number | undefined): Promise<boolean> {
+  if (!userId) return false;
+  const users = await db.select({ role: usersTable.role })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId))
+    .limit(1);
+
+  return users[0]?.role === "admin";
+}
+
 router.get("/health", async (_req, res) => {
   const [pollinationsReachable, elevenlabsReachable] = await Promise.all([
     POLLINATIONS_API_KEY
@@ -366,6 +511,33 @@ router.get("/providers", async (_req, res) => {
     ],
     presets: Object.values(VOICE_PRESETS),
   });
+});
+
+router.get("/settings", async (_req, res) => {
+  const settings = await getStoredVoiceSettings();
+  res.json({
+    settings,
+    defaultProvider: VOICE_PROVIDER_DEFAULT,
+    defaultPreset: getDefaultPreset().id,
+  });
+});
+
+router.put("/settings", async (req, res) => {
+  if (!await isAdminUser(req.userId)) {
+    res.status(403).json({ error: "Forbidden: admin access required" });
+    return;
+  }
+
+  try {
+    const settings = await saveStoredVoiceSettings(req, req.body ?? {});
+    res.json({
+      settings,
+      savedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    req.log.error({ err: error }, "Voice settings save error");
+    res.status(500).json({ error: "Failed to save voice settings" });
+  }
 });
 
 router.get("/voices", async (req, res) => {

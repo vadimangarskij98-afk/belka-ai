@@ -1,22 +1,20 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import jwt from "jsonwebtoken";
 import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { JWT_SECRET } from "../config";
+import {
+  clearGithubOauthStateCookie,
+  getGithubOauthState,
+  getSessionUserId,
+  setGithubOauthStateCookie,
+} from "../lib/auth-session";
+import { decryptSecret, encryptSecret } from "../lib/secrets";
 
 const router: IRouter = Router();
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID || "";
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET || "";
 
 function getUserId(req: Request): number | null {
-  try {
-    const token = req.headers.authorization?.split(" ")[1];
-    if (!token) return null;
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: number };
-    return decoded.id;
-  } catch {
-    return null;
-  }
+  return getSessionUserId(req);
 }
 
 router.get("/auth/url", (req, res) => {
@@ -25,12 +23,13 @@ router.get("/auth/url", (req, res) => {
     return;
   }
   const scope = "repo,read:user,user:email";
-  const url = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&scope=${scope}&state=${Math.random().toString(36).slice(2)}`;
+  const state = setGithubOauthStateCookie(res);
+  const url = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&scope=${scope}&state=${encodeURIComponent(state)}`;
   res.json({ url });
 });
 
 router.post("/auth/callback", async (req, res) => {
-  const { code } = req.body;
+  const { code, state } = req.body;
   const userId = getUserId(req);
 
   if (!code) {
@@ -43,11 +42,18 @@ router.post("/auth/callback", async (req, res) => {
     return;
   }
 
+  const cookieState = getGithubOauthState(req);
+  if (!state || !cookieState || state !== cookieState) {
+    clearGithubOauthStateCookie(res);
+    res.status(400).json({ error: "Invalid OAuth state" });
+    return;
+  }
+
   try {
     const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify({ client_id: GITHUB_CLIENT_ID, client_secret: GITHUB_CLIENT_SECRET, code }),
+      body: JSON.stringify({ client_id: GITHUB_CLIENT_ID, client_secret: GITHUB_CLIENT_SECRET, code, state }),
     });
 
     const tokenData = await tokenRes.json() as { access_token?: string; error?: string };
@@ -66,12 +72,14 @@ router.post("/auth/callback", async (req, res) => {
 
     if (userId) {
       await db.update(usersTable)
-        .set({ githubToken: ghToken, githubUsername: ghUser.login || "" })
+        .set({ githubToken: encryptSecret(ghToken), githubUsername: ghUser.login || "" })
         .where(eq(usersTable.id, userId));
     }
 
+    clearGithubOauthStateCookie(res);
     res.json({ success: true, username: ghUser.login, avatar: ghUser.avatar_url });
   } catch (err) {
+    clearGithubOauthStateCookie(res);
     req.log.error({ err }, "GitHub OAuth callback error");
     res.status(500).json({ error: "OAuth exchange failed" });
   }
@@ -85,12 +93,13 @@ router.get("/status", async (req, res) => {
   }
   try {
     const users = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-    if (!users[0]?.githubToken) {
+    const githubToken = decryptSecret(users[0]?.githubToken);
+    if (!githubToken) {
       res.json({ connected: false });
       return;
     }
     const userRes = await fetch("https://api.github.com/user", {
-      headers: { Authorization: `Bearer ${users[0].githubToken}`, Accept: "application/vnd.github.v3+json" },
+      headers: { Authorization: `Bearer ${githubToken}`, Accept: "application/vnd.github.v3+json" },
     });
     if (!userRes.ok) {
       res.json({ connected: false });
@@ -111,9 +120,9 @@ router.delete("/disconnect", async (req, res) => {
 });
 
 async function getGhToken(userId: number | null): Promise<string | null> {
-  if (!userId) return process.env.GITHUB_TOKEN || null;
+  if (!userId) return null;
   const users = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-  return users[0]?.githubToken || process.env.GITHUB_TOKEN || null;
+  return decryptSecret(users[0]?.githubToken);
 }
 
 router.get("/repos", async (req, res) => {

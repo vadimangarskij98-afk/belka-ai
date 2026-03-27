@@ -1,6 +1,8 @@
 import { Router, type IRouter } from "express";
 import { db, usersTable, conversationsTable, messagesTable, agentsTable, aiModelsTable, subscriptionPlansTable, promoCodesTable, tokenUsageTable, referralsTable, referralSettingsTable, apiRequestsTable } from "@workspace/db";
 import { eq, count, and, gte, sql, desc } from "drizzle-orm";
+import { encryptSecret } from "../lib/secrets";
+import { parseStoredStringArray, stringifyStoredStringArray } from "../lib/serialized-arrays";
 
 const router: IRouter = Router();
 
@@ -87,7 +89,7 @@ router.get("/models", async (req, res) => {
         provider: m.provider,
         modelId: m.modelId,
         apiKey: m.apiKey ? "***" : undefined,
-        capabilities: m.capabilities ? JSON.parse(m.capabilities) : [],
+        capabilities: parseStoredStringArray(m.capabilities),
         contextWindow: m.contextWindow,
         costPerToken: m.costPerToken,
         isActive: m.isActive,
@@ -104,14 +106,14 @@ router.post("/models", async (req, res) => {
   try {
     const { name, provider, modelId, apiKey, capabilities, contextWindow, costPerToken } = req.body;
     const inserted = await db.insert(aiModelsTable).values({
-      name, provider, modelId, apiKey,
-      capabilities: capabilities ? JSON.stringify(capabilities) : null,
+      name, provider, modelId, apiKey: encryptSecret(apiKey),
+      capabilities: stringifyStoredStringArray(capabilities),
       contextWindow, costPerToken,
     }).returning();
     const m = inserted[0];
     res.status(201).json({
       id: String(m.id), name: m.name, provider: m.provider, modelId: m.modelId,
-      capabilities: m.capabilities ? JSON.parse(m.capabilities) : [],
+      capabilities: parseStoredStringArray(m.capabilities),
       contextWindow: m.contextWindow, costPerToken: m.costPerToken,
       isActive: m.isActive, createdAt: m.createdAt.toISOString(),
     });
@@ -126,15 +128,19 @@ router.put("/models/:id", async (req, res) => {
     const id = Number(req.params.id);
     const { name, provider, modelId, apiKey, capabilities, contextWindow, costPerToken } = req.body;
     const updated = await db.update(aiModelsTable).set({
-      ...(name && { name }), ...(provider && { provider }), ...(modelId && { modelId }),
-      ...(apiKey && { apiKey }), ...(capabilities && { capabilities: JSON.stringify(capabilities) }),
-      ...(contextWindow && { contextWindow }), ...(costPerToken !== undefined && { costPerToken }),
+      ...(name !== undefined && { name }),
+      ...(provider !== undefined && { provider }),
+      ...(modelId !== undefined && { modelId }),
+      ...(apiKey !== undefined && { apiKey: apiKey ? encryptSecret(apiKey) : null }),
+      ...(capabilities !== undefined && { capabilities: stringifyStoredStringArray(capabilities) }),
+      ...(contextWindow !== undefined && { contextWindow }),
+      ...(costPerToken !== undefined && { costPerToken }),
     }).where(eq(aiModelsTable.id, id)).returning();
     if (updated.length === 0) { res.status(404).json({ error: "Not found" }); return; }
     const m = updated[0];
     res.json({
       id: String(m.id), name: m.name, provider: m.provider, modelId: m.modelId,
-      capabilities: m.capabilities ? JSON.parse(m.capabilities) : [],
+      capabilities: parseStoredStringArray(m.capabilities),
       contextWindow: m.contextWindow, costPerToken: m.costPerToken,
       isActive: m.isActive, createdAt: m.createdAt.toISOString(),
     });
@@ -222,7 +228,7 @@ router.get("/subscriptions", async (req, res) => {
       plans: plans.map(p => ({
         id: String(p.id), planId: p.planId, name: p.name, description: p.description,
         price: p.price, discountPercent: p.discountPercent, tokensPerMonth: p.tokensPerMonth,
-        agentsLimit: p.agentsLimit, features: p.features ? JSON.parse(p.features) : [],
+        agentsLimit: p.agentsLimit, features: parseStoredStringArray(p.features),
         isActive: p.isActive, createdAt: p.createdAt.toISOString(), updatedAt: p.updatedAt.toISOString(),
       })),
     });
@@ -243,7 +249,7 @@ router.put("/subscriptions/:planId", async (req, res) => {
       ...(discountPercent !== undefined && { discountPercent }),
       ...(tokensPerMonth !== undefined && { tokensPerMonth }),
       ...(agentsLimit !== undefined && { agentsLimit }),
-      ...(features && { features: JSON.stringify(features) }),
+      ...(features !== undefined && { features: stringifyStoredStringArray(features) }),
       updatedAt: new Date(),
     }).where(eq(subscriptionPlansTable.planId, planId)).returning();
     if (updated.length === 0) { res.status(404).json({ error: "Plan not found" }); return; }
@@ -251,7 +257,7 @@ router.put("/subscriptions/:planId", async (req, res) => {
     res.json({
       id: String(p.id), planId: p.planId, name: p.name, description: p.description,
       price: p.price, discountPercent: p.discountPercent, tokensPerMonth: p.tokensPerMonth,
-      agentsLimit: p.agentsLimit, features: p.features ? JSON.parse(p.features) : [],
+      agentsLimit: p.agentsLimit, features: parseStoredStringArray(p.features),
       isActive: p.isActive, updatedAt: p.updatedAt.toISOString(),
     });
   } catch (err) {

@@ -1,230 +1,294 @@
-import { useState, useEffect } from "react";
-import { X, Check, Zap, Building2, Sparkles, CreditCard, ArrowLeft, CheckCircle, Tag } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { X, Check, Zap, Building2, Sparkles, ArrowLeft, CheckCircle, Tag } from "lucide-react";
+import { apiFetch, buildApiUrl, jsonHeaders } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { t, getLang } from "@/lib/i18n";
 
-const planMeta: Record<string, { icon: typeof Sparkles; color: string; popular?: boolean; features: string[]; featuresRu: string[] }> = {
+const API = buildApiUrl();
+
+type PlanMeta = {
+  icon: typeof Sparkles;
+  color: string;
+  popular?: boolean;
+  features: string[];
+  featuresRu: string[];
+};
+
+const planMeta: Record<string, PlanMeta> = {
   free: {
     icon: Sparkles,
     color: "text-muted-foreground",
-    features: ["10K requests", "BELKA CODER", "Community support"],
-    featuresRu: ["10K запросов", "BELKA CODER", "Поддержка сообщества"],
+    features: ["Starter access", "BELKA CODER", "Community support"],
+    featuresRu: ["Стартовый доступ", "BELKA CODER", "Поддержка сообщества"],
   },
   pro: {
     icon: Zap,
     color: "text-primary",
     popular: true,
-    features: ["500K requests", "BELKA CODER Pro", "Priority support", "MCP access"],
-    featuresRu: ["500K запросов", "BELKA CODER Pro", "Приоритетная поддержка", "Доступ к MCP"],
+    features: ["Extended usage limits", "BELKA CODER Pro", "Priority support", "MCP access"],
+    featuresRu: ["Расширенные лимиты", "BELKA CODER Pro", "Приоритетная поддержка", "Доступ к MCP"],
   },
   enterprise: {
     icon: Building2,
     color: "text-secondary",
-    features: ["Unlimited requests", "BELKA CODER Enterprise", "Dedicated support", "API access"],
-    featuresRu: ["Безлимитные запросы", "BELKA CODER Enterprise", "Выделенная поддержка", "API доступ"],
+    features: ["Advanced usage limits", "BELKA CODER Enterprise", "Dedicated support", "API access"],
+    featuresRu: ["Продвинутые лимиты", "BELKA CODER Enterprise", "Выделенная поддержка", "API доступ"],
   },
 };
 
-const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
-const API = `${BASE}/api`.replace(/\/\/+/g, "/");
+type SubscriptionPlan = {
+  planId: string;
+  name?: string;
+  price: number;
+  tokensPerMonth?: number;
+  features?: string[];
+};
 
-function getAuthHeaders(): Record<string, string> {
-  const token = localStorage.getItem("belka-token");
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  return headers;
+function getPlanLabel(planId: string): string {
+  switch (planId) {
+    case "free":
+      return t("free");
+    case "pro":
+      return t("pro");
+    case "enterprise":
+      return t("enterprise");
+    default:
+      return planId;
+  }
 }
 
 export function PricingModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [plans, setPlans] = useState<any[]>([]);
+  const auth = useAuth();
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
-  const [cardData, setCardData] = useState(() => {
-    const saved = localStorage.getItem("belka-card");
-    return saved ? JSON.parse(saved) : { number: "", expiry: "", cvv: "", holder: "" };
-  });
   const [promoCode, setPromoCode] = useState("");
-  const [promoResult, setPromoResult] = useState<{ valid: boolean; discount: number } | null>(null);
+  const [promoResult, setPromoResult] = useState<{ discount: number } | null>(null);
+  const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isRu = getLang() === "ru";
+  const currentUserPlan = auth.user?.plan || localStorage.getItem("belka-plan") || "free";
+
   useEffect(() => {
-    if (open) {
-      fetch(`${API}/subscriptions/plans`)
-        .then(r => r.json())
-        .then(d => setPlans(d.plans || []))
-        .catch(() => {});
+    if (!open) {
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    void apiFetch(`${API}/subscriptions/plans`)
+      .then(async (response) => {
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || "Failed to load plans");
+        }
+
+        return response.json();
+      })
+      .then((data) => {
+        if (cancelled) return;
+        setPlans(Array.isArray(data.plans) ? data.plans : []);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Failed to load plans");
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      setSelectedPlan(null);
+      setPromoCode("");
+      setPromoResult(null);
+      setProcessing(false);
+      setSuccess(false);
+      setError(null);
     }
   }, [open]);
 
-  if (!open) return null;
+  const displayPlans = useMemo(() => {
+    if (plans.length > 0) {
+      return plans.map((plan) => {
+        const meta = planMeta[plan.planId] || planMeta.free;
+        return {
+          ...meta,
+          key: plan.planId,
+          price: `$${plan.price}`,
+          features: plan.features?.length ? plan.features : meta.features,
+          featuresRu: plan.features?.length ? plan.features : meta.featuresRu,
+          tokensPerMonth: plan.tokensPerMonth,
+        };
+      });
+    }
 
-  const isRu = getLang() === "ru";
-  const currentUserPlan = (() => { try { return JSON.parse(localStorage.getItem("belka-user") || "{}").plan; } catch { return null; } })() || localStorage.getItem("belka-plan") || "free";
-  const hasCard = !!localStorage.getItem("belka-card");
-  const maskedCard = hasCard && cardData.number
-    ? "•••• •••• •••• " + cardData.number.replace(/\s/g, "").slice(-4)
-    : null;
+    return Object.entries(planMeta).map(([key, meta]) => ({
+      ...meta,
+      key,
+      price: key === "free" ? "$0" : key === "pro" ? "$29" : "$99",
+      tokensPerMonth: undefined,
+    }));
+  }, [plans]);
 
-  const handleApplyPromo = async () => {
+  const selectedPlanData = displayPlans.find((plan) => plan.key === selectedPlan) ?? null;
+
+  async function handleApplyPromo() {
     if (!promoCode.trim()) return;
+
     try {
-      const res = await fetch(`${API}/subscriptions/apply-promo`, {
+      const response = await apiFetch(`${API}/subscriptions/apply-promo`, {
         method: "POST",
-        headers: getAuthHeaders(),
+        headers: jsonHeaders(),
         body: JSON.stringify({ code: promoCode.trim() }),
       });
-      if (!res.ok) {
-        const data = await res.json();
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
         setPromoResult(null);
         setError(data.error || (isRu ? "Промокод не найден" : "Promo code not found"));
         return;
       }
-      const data = await res.json();
-      setPromoResult({ valid: true, discount: data.discount });
+
+      setPromoResult({ discount: data.discount });
       setError(null);
     } catch {
-      setError(isRu ? "Ошибка при проверке промокода" : "Error checking promo code");
+      setError(isRu ? "Не удалось проверить промокод" : "Could not validate promo code");
     }
-  };
+  }
 
-  const handleSubscribe = async () => {
+  async function handleActivatePlan() {
     if (!selectedPlan) return;
+
     setProcessing(true);
     setError(null);
 
-    const { cvv, ...safeData } = cardData;
-    if (cardData.number) {
-      localStorage.setItem("belka-card", JSON.stringify(safeData));
-    }
-
     try {
-      const res = await fetch(`${API}/subscriptions/subscribe`, {
+      const response = await apiFetch(`${API}/subscriptions/subscribe`, {
         method: "POST",
-        headers: getAuthHeaders(),
+        headers: jsonHeaders(),
         body: JSON.stringify({
           planId: selectedPlan,
-          promoCode: promoResult?.valid ? promoCode.trim() : undefined,
+          promoCode: promoResult ? promoCode.trim() : undefined,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || (isRu ? "Ошибка оплаты" : "Payment error"));
-        setProcessing(false);
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setError(data.error || (isRu ? "Не удалось активировать план" : "Could not activate plan"));
         return;
       }
 
       localStorage.setItem("belka-plan", selectedPlan);
-      const storedUser = localStorage.getItem("belka-user");
-      if (storedUser) {
-        try {
-          const userData = JSON.parse(storedUser);
-          userData.plan = selectedPlan;
-          localStorage.setItem("belka-user", JSON.stringify(userData));
-        } catch {}
-      }
-      setProcessing(false);
       setSuccess(true);
-      setTimeout(() => {
-        setSuccess(false);
-        setSelectedPlan(null);
-        setPromoCode("");
-        setPromoResult(null);
+
+      window.setTimeout(() => {
         onClose();
         window.location.reload();
-      }, 2000);
+      }, 1500);
     } catch {
       setError(isRu ? "Ошибка соединения" : "Connection error");
+    } finally {
       setProcessing(false);
     }
-  };
+  }
 
-  if (success) {
+  if (!open) return null;
+
+  if (success && selectedPlanData) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-        <div className="relative bg-card border border-border rounded-2xl shadow-2xl w-full max-w-sm p-8 text-center" onClick={e => e.stopPropagation()}>
+        <div className="relative bg-card border border-border rounded-2xl shadow-2xl w-full max-w-sm p-8 text-center" onClick={(e) => e.stopPropagation()}>
           <div className="w-16 h-16 rounded-full bg-green-500/10 border-2 border-green-500 flex items-center justify-center mx-auto mb-4">
             <CheckCircle size={32} className="text-green-500" />
           </div>
-          <h3 className="text-lg font-bold text-foreground mb-2">{isRu ? "Оплата прошла успешно!" : "Payment Successful!"}</h3>
-          <p className="text-sm text-muted-foreground">{isRu ? "Ваш план обновлён" : "Your plan has been updated"}</p>
+          <h3 className="text-lg font-bold text-foreground mb-2">
+            {isRu ? "План обновлен" : "Plan updated"}
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            {isRu
+              ? `Активирован план ${getPlanLabel(selectedPlanData.key)}.`
+              : `${getPlanLabel(selectedPlanData.key)} is now active.`}
+          </p>
         </div>
       </div>
     );
   }
 
-  if (selectedPlan) {
-    const meta = planMeta[selectedPlan] || planMeta.free;
-    const planData = plans.find(p => p.planId === selectedPlan);
-    const price = planData ? `$${planData.price}` : "$0";
-    const finalPrice = promoResult?.valid ? `$${(planData?.price || 0) * (1 - promoResult.discount / 100)}` : price;
+  if (selectedPlanData) {
+    const basePrice = Number(selectedPlanData.price.replace("$", ""));
+    const finalPrice = promoResult
+      ? `$${(basePrice * (1 - promoResult.discount / 100)).toFixed(2)}`
+      : selectedPlanData.price;
 
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-        <div className="relative bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="relative bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-between px-5 py-3 border-b border-border">
-            <button onClick={() => { setSelectedPlan(null); setPromoResult(null); setPromoCode(""); setError(null); }} className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+            <button
+              onClick={() => {
+                setSelectedPlan(null);
+                setPromoCode("");
+                setPromoResult(null);
+                setError(null);
+              }}
+              className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+            >
               <ArrowLeft size={16} />
             </button>
-            <h2 className="text-sm font-semibold text-foreground">{isRu ? "Оплата" : "Payment"} — {selectedPlan || ""} {price}/{isRu ? "мес" : "mo"}</h2>
+            <h2 className="text-sm font-semibold text-foreground">
+              {isRu ? "Подтверждение плана" : "Confirm plan"}
+            </h2>
             <button onClick={onClose} className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
               <X size={16} />
             </button>
           </div>
 
           <div className="p-5 space-y-4">
-            {hasCard && maskedCard && (
-              <div className="p-3 rounded-xl border border-border bg-muted/30">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <CreditCard size={16} className="text-primary" />
-                    <span className="text-sm font-mono text-foreground">{maskedCard}</span>
+            <div className="rounded-xl border border-border bg-muted/30 p-4">
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <div>
+                  <div className="text-sm font-semibold text-foreground">{getPlanLabel(selectedPlanData.key)}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {isRu ? "Смена активного плана BELKA AI" : "Switch active BELKA AI plan"}
                   </div>
-                  <button
-                    onClick={handleSubscribe}
-                    disabled={processing}
-                    className="px-4 py-1.5 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 disabled:opacity-50"
-                  >
-                    {processing ? (isRu ? "Обработка..." : "Processing...") : (isRu ? "Оплатить" : "Pay")}
-                  </button>
+                </div>
+                <div className="text-right">
+                  <div className="text-lg font-bold text-foreground">{finalPrice}</div>
+                  <div className="text-[10px] text-muted-foreground">{t("perMonth")}</div>
                 </div>
               </div>
-            )}
 
-            <div className="text-xs text-muted-foreground text-center">{hasCard ? (isRu ? "или введите новую карту" : "or enter a new card") : (isRu ? "Введите данные карты" : "Enter card details")}</div>
-
-            <div className="space-y-2">
-              <input
-                value={cardData.number}
-                onChange={(e) => setCardData({ ...cardData, number: e.target.value.replace(/\D/g, "").replace(/(\d{4})/g, "$1 ").trim().slice(0, 19) })}
-                placeholder={t("cardNumber")}
-                maxLength={19}
-                className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:border-primary transition-colors font-mono"
-              />
-              <div className="grid grid-cols-3 gap-2">
-                <input
-                  value={cardData.expiry}
-                  onChange={(e) => setCardData({ ...cardData, expiry: e.target.value })}
-                  placeholder={t("cardExpiry")}
-                  maxLength={5}
-                  className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:border-primary transition-colors"
-                />
-                <input
-                  value={cardData.cvv}
-                  onChange={(e) => setCardData({ ...cardData, cvv: e.target.value })}
-                  placeholder={t("cardCvv")}
-                  maxLength={4}
-                  type="password"
-                  className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:border-primary transition-colors"
-                />
-                <input
-                  value={cardData.holder}
-                  onChange={(e) => setCardData({ ...cardData, holder: e.target.value.toUpperCase() })}
-                  placeholder={t("cardHolder")}
-                  className="px-3 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:border-primary transition-colors"
-                />
+              <div className="space-y-1">
+                {(isRu ? selectedPlanData.featuresRu : selectedPlanData.features).map((feature, index) => (
+                  <div key={index} className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Check size={11} className="text-primary flex-shrink-0" />
+                    <span>{feature}</span>
+                  </div>
+                ))}
               </div>
+
+              {typeof selectedPlanData.tokensPerMonth === "number" && (
+                <div className="mt-3 text-xs text-muted-foreground">
+                  {isRu ? "Месячный лимит токенов" : "Monthly token limit"}:{" "}
+                  <span className="text-foreground font-medium">
+                    {selectedPlanData.tokensPerMonth.toLocaleString()}
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-2">
@@ -232,7 +296,10 @@ export function PricingModal({ open, onClose }: { open: boolean; onClose: () => 
                 <Tag size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <input
                   value={promoCode}
-                  onChange={e => { setPromoCode(e.target.value); setPromoResult(null); }}
+                  onChange={(e) => {
+                    setPromoCode(e.target.value);
+                    setPromoResult(null);
+                  }}
                   placeholder={isRu ? "Промокод" : "Promo code"}
                   className="w-full pl-8 pr-3 py-2 rounded-xl border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:border-primary transition-colors"
                 />
@@ -245,40 +312,42 @@ export function PricingModal({ open, onClose }: { open: boolean; onClose: () => 
               </button>
             </div>
 
-            {promoResult?.valid && (
+            {promoResult && (
               <div className="flex items-center gap-1.5 text-xs text-green-400">
                 <Check size={12} />
-                {isRu ? `Скидка ${promoResult.discount}%! Итого: ${finalPrice}/мес` : `${promoResult.discount}% off! Total: ${finalPrice}/mo`}
+                {isRu
+                  ? `Промокод применен: -${promoResult.discount}%`
+                  : `Promo applied: -${promoResult.discount}%`}
               </div>
             )}
 
-            {error && (
-              <div className="text-xs text-red-400 text-center">{error}</div>
-            )}
+            <div className="rounded-xl border border-border bg-background/60 p-3 text-xs text-muted-foreground">
+              {isRu
+                ? "Этот экран меняет активный план внутри BELKA AI. Платежный провайдер в этом окружении не подключен отдельно."
+                : "This screen changes the active BELKA AI plan. A separate external billing provider is not connected in this environment."}
+            </div>
+
+            {error && <div className="text-xs text-red-400">{error}</div>}
 
             <button
-              onClick={handleSubscribe}
-              disabled={processing || !cardData.number || !cardData.expiry || !cardData.holder}
+              onClick={handleActivatePlan}
+              disabled={processing}
               className="w-full py-2.5 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-primary/20"
             >
-              {processing ? (isRu ? "Обработка..." : "Processing...") : (isRu ? `Оплатить ${promoResult?.valid ? finalPrice : price}/мес` : `Pay ${promoResult?.valid ? finalPrice : price}/mo`)}
+              {processing
+                ? (isRu ? "Обновляю план..." : "Updating plan...")
+                : (isRu ? `Активировать ${getPlanLabel(selectedPlanData.key)}` : `Activate ${getPlanLabel(selectedPlanData.key)}`)}
             </button>
-
-            <p className="text-[10px] text-muted-foreground text-center">{isRu ? "Безопасная оплата. Можно отменить в любое время." : "Secure payment. Cancel anytime."}</p>
           </div>
         </div>
       </div>
     );
   }
 
-  const displayPlans = plans.length > 0
-    ? plans.map(p => ({ key: p.planId, price: `$${p.price}`, ...planMeta[p.planId] || planMeta.free, dbPlan: p }))
-    : Object.entries(planMeta).map(([key, meta]) => ({ key, price: key === "free" ? "$0" : key === "pro" ? "$29" : "$99", ...meta }));
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-      <div className="relative bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="relative bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-3 border-b border-border">
           <h2 className="text-base font-semibold text-foreground">{t("pricingTitle")}</h2>
           <button onClick={onClose} className="p-1 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
@@ -286,34 +355,66 @@ export function PricingModal({ open, onClose }: { open: boolean; onClose: () => 
           </button>
         </div>
 
-        <div className="p-4 space-y-2.5 overflow-y-auto">
+        <div className="p-4 space-y-3 overflow-y-auto">
+          <div className="rounded-xl border border-border bg-background/60 p-3 text-xs text-muted-foreground">
+            {isRu
+              ? "Выберите план для текущего аккаунта. Интерфейс использует реальные данные планов и промокодов из backend."
+              : "Choose a plan for the current account. This screen uses real plan and promo data from the backend."}
+          </div>
+
+          {loading && (
+            <div className="text-sm text-muted-foreground">
+              {isRu ? "Загружаю планы..." : "Loading plans..."}
+            </div>
+          )}
+
+          {error && !loading && (
+            <div className="text-sm text-red-400">{error}</div>
+          )}
+
           {displayPlans.map((plan) => {
             const Icon = plan.icon;
             const features = isRu ? plan.featuresRu : plan.features;
+            const isCurrent = plan.key === currentUserPlan;
+
             return (
               <div key={plan.key} className={`rounded-xl border p-3 ${plan.popular ? "border-primary bg-primary/5" : "border-border"}`}>
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-2">
                     <Icon size={16} className={plan.color} />
-                    <span className="text-sm font-semibold text-foreground">{t(plan.key)}</span>
-                    {plan.popular && <span className="text-[9px] px-1.5 py-0.5 bg-primary text-white rounded-full font-medium">{t("mostPopular")}</span>}
+                    <span className="text-sm font-semibold text-foreground">{getPlanLabel(plan.key)}</span>
+                    {plan.popular && (
+                      <span className="text-[9px] px-1.5 py-0.5 bg-primary text-white rounded-full font-medium">
+                        {t("mostPopular")}
+                      </span>
+                    )}
                   </div>
-                  <span className="text-lg font-bold text-foreground">{plan.price}<span className="text-[10px] text-muted-foreground font-normal">{t("perMonth")}</span></span>
+                  <span className="text-lg font-bold text-foreground">
+                    {plan.price}
+                    <span className="text-[10px] text-muted-foreground font-normal">{t("perMonth")}</span>
+                  </span>
                 </div>
+
                 <div className="space-y-1 mb-2.5">
-                  {features.map((f, i) => (
-                    <div key={i} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  {features.map((feature, index) => (
+                    <div key={index} className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <Check size={11} className="text-primary flex-shrink-0" />
-                      {f}
+                      {feature}
                     </div>
                   ))}
                 </div>
+
                 <button
-                  onClick={() => plan.key === currentUserPlan ? null : setSelectedPlan(plan.key)}
-                  disabled={plan.key === currentUserPlan}
-                  className={`w-full py-1.5 rounded-lg text-xs font-medium transition-colors ${plan.key === currentUserPlan ? "bg-muted text-muted-foreground cursor-default" : "bg-primary text-white hover:bg-primary/90"}`}
+                  onClick={() => {
+                    if (!isCurrent) {
+                      setSelectedPlan(plan.key);
+                      setError(null);
+                    }
+                  }}
+                  disabled={isCurrent}
+                  className={`w-full py-1.5 rounded-lg text-xs font-medium transition-colors ${isCurrent ? "bg-muted text-muted-foreground cursor-default" : "bg-primary text-white hover:bg-primary/90"}`}
                 >
-                  {plan.key === currentUserPlan ? (isRu ? "Текущий план" : "Current Plan") : t("choosePlan")}
+                  {isCurrent ? (isRu ? "Текущий план" : "Current plan") : t("choosePlan")}
                 </button>
               </div>
             );

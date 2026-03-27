@@ -1,16 +1,10 @@
 import { useState, useEffect } from "react";
 import { X, User, Camera, Save, Mail, Crown, Pencil, ArrowLeft, Calendar, Gift, Copy, Check } from "lucide-react";
+import { apiFetch, buildApiUrl, jsonHeaders } from "@/lib/api";
 import { t, getLang } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 
-const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
-const API = `${BASE}/api`.replace(/\/\/+/g, "/");
-function getAuthHeaders(): Record<string, string> {
-  const token = localStorage.getItem("belka-token");
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  return headers;
-}
+const API = buildApiUrl();
 
 const AVATAR_STYLES = [
   "bottts",
@@ -70,9 +64,9 @@ export function ProfileModal({ open, onClose }: { open: boolean; onClose: () => 
       setEditing(false);
       setRefApplyMsg("");
       setRefCodeInput("");
-      fetch(`${API}/referrals/my-code`, { headers: getAuthHeaders() })
+      apiFetch(`${API}/referrals/my-code`)
         .then(r => r.json()).then(d => { if (d.referralCode) setReferralCode(d.referralCode); }).catch(() => {});
-      fetch(`${API}/referrals/stats`, { headers: getAuthHeaders() })
+      apiFetch(`${API}/referrals/stats`)
         .then(r => r.json()).then(d => { setReferralStats({ totalReferred: d.totalReferred || 0, bonusRequests: d.bonusRequests || 0 }); }).catch(() => {});
     }
   }, [open, user]);
@@ -192,7 +186,7 @@ export function ProfileModal({ open, onClose }: { open: boolean; onClose: () => 
             <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-primary/30 shadow-lg shadow-primary/20 mb-3">
               <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />
             </div>
-            <span className="text-lg font-semibold text-foreground">{localStorage.getItem("belka-display-name") || user.username}</span>
+            <span className="text-lg font-semibold text-foreground">{localStorage.getItem(`belka-display-name-${user.id}`) || user.username}</span>
             <span className="text-xs text-muted-foreground mb-2">{user.email}</span>
             <span className="px-3 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20 capitalize flex items-center gap-1.5">
               <Crown size={11} />
@@ -265,7 +259,7 @@ export function ProfileModal({ open, onClose }: { open: boolean; onClose: () => 
                   onClick={async () => {
                     if (!refCodeInput.trim()) return;
                     try {
-                      const res = await fetch(`${API}/referrals/apply`, { method: "POST", headers: getAuthHeaders(), body: JSON.stringify({ code: refCodeInput.trim() }) });
+                      const res = await apiFetch(`${API}/referrals/apply`, { method: "POST", headers: jsonHeaders(), body: JSON.stringify({ code: refCodeInput.trim() }) });
                       const data = await res.json();
                       setRefApplyMsg(res.ok ? t("referralApplied") : data.error || t("referralInvalid"));
                     } catch { setRefApplyMsg(t("referralInvalid")); }

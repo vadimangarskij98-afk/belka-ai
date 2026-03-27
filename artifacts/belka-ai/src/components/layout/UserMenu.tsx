@@ -6,6 +6,7 @@ import { SettingsModal } from "@/components/modals/SettingsModal";
 import { PricingModal } from "@/components/modals/PricingModal";
 import { ProfileModal } from "@/components/modals/ProfileModal";
 import { DocsModal } from "@/components/modals/DocsModal";
+import { apiFetch, buildApiUrl } from "@/lib/api";
 import { useLocation } from "wouter";
 
 const REQUEST_LIMITS: Record<string, number> = {
@@ -27,8 +28,7 @@ function getRequestsUsed(): number {
   }
 }
 
-const BASE = import.meta.env.BASE_URL || "/";
-const apiBase = `${BASE}api`.replace(/\/+/g, "/");
+const apiBase = buildApiUrl();
 
 function formatRequests(n: number): string {
   if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
@@ -53,9 +53,7 @@ export function UserMenu({ compact }: { compact?: boolean }) {
   const [barAnimated, setBarAnimated] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem("belka-token");
-    if (!token) return;
-    fetch(`${apiBase}/auth/token-usage`, { headers: { Authorization: `Bearer ${token}` } })
+    apiFetch(`${apiBase}/auth/token-usage`)
       .then(r => r.ok ? r.json() : null)
       .then(data => { if (data) setApiRequestData({ used: data.tokensUsed, limit: data.tokenLimit }); })
       .catch(() => {});

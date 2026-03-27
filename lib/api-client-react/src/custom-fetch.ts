@@ -17,6 +17,9 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
+let _csrfPromise: Promise<string | null> | null = null;
+const CSRF_COOKIE_NAME = "belka_csrf";
+const DEFAULT_CSRF_PATH = "/api/auth/csrf";
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -39,6 +42,40 @@ export function setBaseUrl(url: string | null): void {
  */
 export function setAuthTokenGetter(getter: AuthTokenGetter | null): void {
   _authTokenGetter = getter;
+}
+
+function readCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]+)`));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function resolveCsrfUrl(): string {
+  if (!_baseUrl) return DEFAULT_CSRF_PATH;
+  return `${_baseUrl.replace(/\/+$/, "")}/auth/csrf`;
+}
+
+async function ensureCsrfToken(): Promise<string | null> {
+  const existing = readCookie(CSRF_COOKIE_NAME);
+  if (existing) {
+    return existing;
+  }
+
+  if (!_csrfPromise) {
+    _csrfPromise = fetch(resolveCsrfUrl(), { credentials: "include" })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        const data = await response.json().catch(() => ({}));
+        return data?.csrfToken || readCookie(CSRF_COOKIE_NAME);
+      })
+      .catch(() => null)
+      .finally(() => {
+        _csrfPromise = null;
+      });
+  }
+
+  return _csrfPromise;
 }
 
 function isRequest(input: RequestInfo | URL): input is Request {
@@ -346,6 +383,16 @@ export async function customFetch<T = unknown>(
     headers.set("accept", DEFAULT_JSON_ACCEPT);
   }
 
+  if (
+    !["GET", "HEAD", "OPTIONS"].includes(method) &&
+    !headers.has("x-csrf-token")
+  ) {
+    const csrfToken = await ensureCsrfToken();
+    if (csrfToken) {
+      headers.set("x-csrf-token", csrfToken);
+    }
+  }
+
   // Attach bearer token when an auth getter is configured and no
   // Authorization header has been explicitly provided.
   if (_authTokenGetter && !headers.has("authorization")) {
@@ -357,7 +404,12 @@ export async function customFetch<T = unknown>(
 
   const requestInfo = { method, url: resolveUrl(input) };
 
-  const response = await fetch(input, { ...init, method, headers });
+  const response = await fetch(input, {
+    ...init,
+    method,
+    headers,
+    credentials: init.credentials ?? "include",
+  });
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);

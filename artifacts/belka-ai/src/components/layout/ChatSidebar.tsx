@@ -4,12 +4,8 @@ import { Plus, PanelLeftClose, PanelLeft, Loader2, X, Trash2, Archive, ChevronDo
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n";
+import { apiFetch, buildApiUrl, jsonHeaders } from "@/lib/api";
 import { UserMenu } from "./UserMenu";
-
-function authHeaders(): Record<string, string> {
-  const token = typeof window !== "undefined" ? localStorage.getItem("belka-token") : null;
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
 
 interface ChatSidebarProps {
   collapsed?: boolean;
@@ -51,26 +47,23 @@ export function ChatSidebar({ collapsed, onToggle, activeConvId, isPending }: Ch
   const recentBtnRef = useRef<HTMLButtonElement>(null);
   const chatListRef = useRef<HTMLDivElement>(null);
 
-  const BASE = import.meta.env.BASE_URL || "/";
-  const API = `${BASE}api`.replace(/\/\/+/g, "/");
+  const API = buildApiUrl();
 
   const initialLoadDone = useRef(false);
 
   const fetchConversations = async () => {
     try {
-      const headers = authHeaders();
-      if (!headers.Authorization) {
-        setConversations([]);
-        setArchivedConversations([]);
-        setIsLoading(false);
-        return;
-      }
-
       if (!initialLoadDone.current) setIsLoading(true);
       const [activeRes, archivedRes] = await Promise.all([
-        fetch(`${API}/conversations`, { headers }),
-        fetch(`${API}/conversations?archived=true`, { headers }),
+        apiFetch(`${API}/conversations`),
+        apiFetch(`${API}/conversations?archived=true`),
       ]);
+      if (activeRes.status === 401 || archivedRes.status === 401) {
+        setConversations([]);
+        setArchivedConversations([]);
+        initialLoadDone.current = true;
+        return;
+      }
       const activeData = await activeRes.json();
       const archivedData = await archivedRes.json();
       setConversations(activeData.conversations || []);
@@ -109,7 +102,7 @@ export function ChatSidebar({ collapsed, onToggle, activeConvId, isPending }: Ch
 
   const handleDelete = async (id: string) => {
     try {
-      await fetch(`${API}/conversations/${id}`, { method: "DELETE", headers: authHeaders() });
+      await apiFetch(`${API}/conversations/${id}`, { method: "DELETE" });
       setConversations(prev => prev.filter(c => c.id !== id));
       setDeleteConfirm(null);
       queryClient.invalidateQueries({ queryKey: ["listConversations"] });
@@ -119,7 +112,7 @@ export function ChatSidebar({ collapsed, onToggle, activeConvId, isPending }: Ch
 
   const handleArchive = async (id: string) => {
     try {
-      await fetch(`${API}/conversations/${id}/archive`, { method: "PATCH", headers: authHeaders() });
+      await apiFetch(`${API}/conversations/${id}/archive`, { method: "PATCH", headers: jsonHeaders() });
       setDeleteConfirm(null);
       fetchConversations();
       queryClient.invalidateQueries({ queryKey: ["listConversations"] });
@@ -129,7 +122,7 @@ export function ChatSidebar({ collapsed, onToggle, activeConvId, isPending }: Ch
 
   const handleUnarchive = async (id: string) => {
     try {
-      await fetch(`${API}/conversations/${id}/unarchive`, { method: "PATCH", headers: authHeaders() });
+      await apiFetch(`${API}/conversations/${id}/unarchive`, { method: "PATCH", headers: jsonHeaders() });
       fetchConversations();
       queryClient.invalidateQueries({ queryKey: ["listConversations"] });
     } catch {}

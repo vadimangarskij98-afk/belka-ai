@@ -1,10 +1,20 @@
-import { Router, type IRouter } from "express";
-import { db, repositoriesTable } from "@workspace/db";
+import { Router, type IRouter, type Request } from "express";
+import { db, repositoriesTable, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { getSessionUserId } from "../lib/auth-session";
+import { decryptSecret } from "../lib/secrets";
 
 const router: IRouter = Router();
 
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN || "";
+async function getGithubTokenForRequest(req: Request): Promise<string | null> {
+  const userId = getSessionUserId(req);
+  if (!userId) {
+    return null;
+  }
+
+  const users = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  return decryptSecret(users[0]?.githubToken);
+}
 
 router.get("/", async (req, res) => {
   try {
@@ -79,10 +89,16 @@ router.get("/:id/files", async (req, res) => {
       return;
     }
 
+    const githubToken = await getGithubTokenForRequest(req);
+    if (!githubToken) {
+      res.status(401).json({ error: "GitHub not connected" });
+      return;
+    }
+
     const apiUrl = `https://api.github.com/repos/${owner}/${name}/contents/${path}`;
     const response = await fetch(apiUrl, {
       headers: {
-        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        Authorization: `Bearer ${githubToken}`,
         Accept: "application/vnd.github.v3+json",
       },
     });

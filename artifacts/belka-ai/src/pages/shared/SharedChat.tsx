@@ -99,7 +99,7 @@ export default function SharedChat() {
       <header className="h-12 border-b border-border/50 flex items-center px-6 bg-background/80 backdrop-blur-md">
         <AgentAvatar role={AgentRole.coder} className="w-7 h-7 mr-2" />
         <span className="text-sm font-medium text-foreground">{conversation?.title || "Shared Chat"}</span>
-        <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20">Shared</span>
+        <span className="ml-2 rounded border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">Shared</span>
       </header>
 
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
@@ -120,13 +120,13 @@ export default function SharedChat() {
                 {sources.length > 0 && (
                   <div className="glass-panel px-3 py-2 rounded-2xl rounded-tl-sm mb-1 w-full">
                     <div className="flex items-center gap-1.5 mb-1">
-                      <Globe size={12} className="text-blue-400" />
-                      <span className="text-[10px] font-semibold text-blue-400 uppercase tracking-wider">Источники</span>
+                      <Globe size={12} className="text-accent" />
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-accent">Sources</span>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                       {sources.map((src: any, j: number) => (
                         <a key={j} href={src.url} target="_blank" rel="noopener noreferrer"
-                          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20 text-[11px] text-blue-300 hover:bg-blue-500/20 transition-colors max-w-[200px] truncate">
+                          className="flex max-w-[200px] items-center gap-1 rounded-lg border border-accent/20 bg-accent/10 px-2 py-1 text-[11px] text-foreground/85 transition-colors hover:border-primary/25 hover:bg-primary/10 hover:text-foreground truncate">
                           <ExternalLink size={10} />
                           <span className="truncate">{src.title || "Link"}</span>
                         </a>
