@@ -151,18 +151,18 @@ export default function Home() {
           </Link>
 
           <div className="flex items-center gap-3">
-            <Link href={user ? "/chat" : "/auth"}>
-              <div className="hidden rounded-full border border-border/70 bg-card/80 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary/30 hover:text-primary sm:inline-flex">
-                {user ? "Open workspace" : "Sign in"}
-              </div>
-            </Link>
             <button
               onClick={() => setPricingOpen(true)}
-              className="inline-flex items-center gap-2 rounded-full belka-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(46,160,67,0.18)]"
+              className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-card/80 px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:border-primary/30 hover:text-primary"
             >
-              Launch BELKA
-              <ArrowRight size={15} />
+              Pricing
             </button>
+            <Link href={user ? "/chat" : "/auth"}>
+              <div className="inline-flex items-center gap-2 rounded-full belka-gradient px-5 py-2.5 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(46,160,67,0.18)]">
+                {user ? "Open workspace" : "Get started"}
+                <ArrowRight size={15} />
+              </div>
+            </Link>
           </div>
         </nav>
 

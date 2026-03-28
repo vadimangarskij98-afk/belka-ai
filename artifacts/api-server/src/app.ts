@@ -1,7 +1,6 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import helmet from "helmet";
-import rateLimit from "express-rate-limit";
 import pinoHttp from "pino-http";
 import cookieParser from "cookie-parser";
 import { db, usersTable } from "@workspace/db";
@@ -9,12 +8,15 @@ import { eq } from "drizzle-orm";
 import router from "./routes";
 import authRouter from "./routes/auth";
 import { logger } from "./lib/logger";
-import { getCsrfToken, getSessionUserId, hasValidCsrfToken, setCsrfCookie } from "./lib/auth-session";
+import { createBelkaRateLimiter } from "./lib/rate-limit";
+import { warmRedisConnection } from "./lib/redis";
+import { getCsrfToken, getVerifiedSessionUserId, hasValidCsrfToken, setCsrfCookie } from "./lib/auth-session";
 import { IS_PRODUCTION } from "./config";
 
 const app: Express = express();
 
 app.set("trust proxy", 1);
+warmRedisConnection();
 
 app.use(helmet({
   contentSecurityPolicy: false,
@@ -33,6 +35,17 @@ function isOriginAllowed(origin?: string): boolean {
   return allowedOrigins.includes(origin);
 }
 
+app.use(cookieParser());
+app.use(async (req: Request, _res: Response, next: NextFunction) => {
+  try {
+    req.userId = await getVerifiedSessionUserId(req) ?? undefined;
+  } catch {
+    req.userId = undefined;
+  }
+
+  next();
+});
+
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
@@ -44,43 +57,38 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"],
 }));
 
-const globalLimiter = rateLimit({
+const globalLimiter = createBelkaRateLimiter({
+  prefix: "global",
   windowMs: 15 * 60 * 1000,
   max: 500,
-  standardHeaders: true,
-  legacyHeaders: false,
   message: { error: "Too many requests, please try again later" },
 });
 
-const authLimiter = rateLimit({
+const authLimiter = createBelkaRateLimiter({
+  prefix: "auth",
   windowMs: 15 * 60 * 1000,
   max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
   message: { error: "Too many authentication attempts" },
 });
 
-const chatLimiter = rateLimit({
+const chatLimiter = createBelkaRateLimiter({
+  prefix: "chat",
   windowMs: 60 * 1000,
   max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
   message: { error: "Too many chat requests, please slow down" },
 });
 
-const voiceLimiter = rateLimit({
+const voiceLimiter = createBelkaRateLimiter({
+  prefix: "voice",
   windowMs: 60 * 1000,
   max: 40,
-  standardHeaders: true,
-  legacyHeaders: false,
   message: { error: "Too many voice requests, please slow down" },
 });
 
-const mcpLimiter = rateLimit({
+const mcpLimiter = createBelkaRateLimiter({
+  prefix: "mcp",
   windowMs: 60 * 1000,
   max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
   message: { error: "Too many MCP requests, please slow down" },
 });
 
@@ -108,7 +116,6 @@ app.use(
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-app.use(cookieParser());
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   if (!req.cookies?.belka_csrf) {
@@ -169,7 +176,7 @@ app.get("/api/auth/session", async (req: Request, res: Response) => {
       setCsrfCookie(res);
     }
 
-    const userId = getSessionUserId(req);
+    const userId = req.userId;
     if (!userId) {
       res.json({ authenticated: false, user: null });
       return;

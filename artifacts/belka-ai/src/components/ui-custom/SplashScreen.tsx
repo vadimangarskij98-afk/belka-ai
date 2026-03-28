@@ -3,8 +3,8 @@ import { motion, AnimatePresence } from "framer-motion";
 
 const LETTERS = "BELKACODER".split("");
 const COLORS = [
-  "#3b82f6", "#6366f1", "#8b5cf6", "#a855f7", "#6366f1",
-  "#ec4899", "#f43f5e", "#ef4444", "#f97316", "#eab308",
+  "#2EA043", "#4CAF50", "#8AC234", "#A6D84A", "#C084FC",
+  "#B16BE6", "#F5F0E8", "#F0D9B5", "#F97316", "#D86412",
 ];
 
 const SPLASH_KEY = "belka_splash_seen";
@@ -20,19 +20,7 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!show) return;
 
-    const delays = [
-      500,
-      600,
-      600,
-      600,
-      600,
-      500,
-      500,
-      500,
-      500,
-      500,
-      800,
-    ];
+    const delays = [120, 100, 100, 100, 100, 90, 90, 90, 90, 90, 220];
 
     let total = 0;
     const timers: ReturnType<typeof setTimeout>[] = [];
@@ -46,7 +34,7 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
     timerRef.current = setTimeout(() => {
       sessionStorage.setItem(SPLASH_KEY, "1");
       setShow(false);
-    }, total + 400);
+    }, total + 220);
 
     return () => {
       timers.forEach(clearTimeout);
@@ -67,7 +55,7 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
             key="splash"
             initial={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.6 }}
+            transition={{ duration: 0.28 }}
             className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#0a0a0f] cursor-pointer"
             onClick={skip}
           >
@@ -105,7 +93,7 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
                 animate={{ scale: 1, rotate: 0 }}
                 transition={{ type: "spring", stiffness: 200, damping: 15, delay: 0.2 }}
                 style={{
-                  filter: "drop-shadow(0 0 30px rgba(99, 102, 241, 0.5)) drop-shadow(0 0 60px rgba(139, 92, 246, 0.3))",
+                  filter: "drop-shadow(0 0 28px rgba(46, 160, 67, 0.34)) drop-shadow(0 0 54px rgba(192, 132, 252, 0.18))",
                 }}
               />
             </div>
@@ -166,7 +154,7 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
                 animate={{ opacity: 1, y: 0 }}
                 className="text-sm text-white/40 font-mono"
               >
-                AI-powered development platform
+                Agent workspace for real product work
               </motion.p>
             )}
 

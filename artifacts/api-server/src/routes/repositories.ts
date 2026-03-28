@@ -1,13 +1,12 @@
 import { Router, type IRouter, type Request } from "express";
 import { db, repositoriesTable, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { getSessionUserId } from "../lib/auth-session";
 import { decryptSecret } from "../lib/secrets";
 
 const router: IRouter = Router();
 
 async function getGithubTokenForRequest(req: Request): Promise<string | null> {
-  const userId = getSessionUserId(req);
+  const userId = req.userId ?? null;
   if (!userId) {
     return null;
   }

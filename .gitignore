@@ -57,5 +57,7 @@ output/
 .tmp-railway-*.json
 .tmp-railway-*.txt
 .tmp-runtime-smoke.ps1
+database-dump.sql
+database-dump*.sql
 artifacts/api-server/.tmp-backend-*.log
 artifacts/belka-ai/.tmp-frontend-preview*.log

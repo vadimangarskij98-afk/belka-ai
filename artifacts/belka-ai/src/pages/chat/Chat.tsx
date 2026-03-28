@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
-import { Send, Mic, MicOff, Plug, Paperclip, Loader2, Search, FileCode, CheckCircle, Eye, Brain, FolderOpen, Github, PanelRight, PanelRightClose, Upload, X, Globe, ExternalLink, Code, ShieldCheck, Sparkles, TerminalSquare, Server, Download, ImageIcon, AudioLines, Waves } from "lucide-react";
+import { Send, Mic, MicOff, Plug, Paperclip, Loader2, Search, FileCode, CheckCircle, Eye, Brain, FolderOpen, Github, PanelLeft, PanelRight, PanelRightClose, Upload, X, Globe, ExternalLink, Code, ShieldCheck, Sparkles, TerminalSquare, Server, Download, ImageIcon, AudioLines, Waves } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ChatSidebar } from "@/components/layout/ChatSidebar";
@@ -698,6 +698,8 @@ export default function ChatPage() {
   const [mode, setMode] = useState<"chat" | "code" | "multi-agent" | "image">("code");
   const [voiceConfig, setVoiceConfig] = useState<VoiceAssistantConfig>(() => getVoiceAssistantConfig());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
   const [githubOpen, setGithubOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -713,7 +715,7 @@ export default function ChatPage() {
   const [docsOpen, setDocsOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewHtml, setPreviewHtml] = useState<string>("");
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const handleSubmitRef = useRef<(text: string) => void>(() => {});
   const { theme, setTheme: setThemeValue } = useTheme();
   const { logout, user, isAdmin } = useAuth();
@@ -1058,8 +1060,27 @@ export default function ChatPage() {
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 768px)");
-    if (mq.matches) setSidebarCollapsed(true);
+    const applyViewportState = () => {
+      const isMobile = mq.matches;
+      setIsMobileViewport(isMobile);
+      if (isMobile) {
+        setSidebarCollapsed(true);
+      } else {
+        setMobileSidebarOpen(false);
+      }
+    };
+
+    applyViewportState();
+    mq.addEventListener("change", applyViewportState);
+
+    return () => {
+      mq.removeEventListener("change", applyViewportState);
+    };
   }, []);
+
+  useEffect(() => {
+    setMobileSidebarOpen(false);
+  }, [location, conversationId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1297,17 +1318,48 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
-      <ChatSidebar
-        collapsed={sidebarCollapsed}
-        onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
-        activeConvId={conversationId}
-        isPending={streaming.isStreaming}
-      />
+      {isMobileViewport ? (
+        mobileSidebarOpen && (
+          <div className="fixed inset-0 z-40 md:hidden">
+            <button
+              type="button"
+              className="absolute inset-0 bg-black/55 backdrop-blur-sm"
+              onClick={() => setMobileSidebarOpen(false)}
+              aria-label="Close navigation"
+            />
+            <div className="absolute inset-y-0 left-0 w-[288px] max-w-[84vw] shadow-2xl">
+              <ChatSidebar
+                collapsed={false}
+                onToggle={() => setMobileSidebarOpen(false)}
+                activeConvId={conversationId}
+                isPending={streaming.isStreaming}
+              />
+            </div>
+          </div>
+        )
+      ) : (
+        <ChatSidebar
+          collapsed={sidebarCollapsed}
+          onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+          activeConvId={conversationId}
+          isPending={streaming.isStreaming}
+        />
+      )}
 
       <main className="flex-1 flex flex-col relative min-w-0">
         <header className="grid min-h-[72px] items-center gap-3 border-b border-border/50 bg-background/80 px-4 py-3 backdrop-blur-md z-10 flex-shrink-0 md:grid-cols-[minmax(0,1fr)_minmax(260px,360px)_minmax(0,1fr)]">
           <div className="min-w-0 max-md:order-1">
             <div className="flex min-w-0 items-center gap-2">
+              {isMobileViewport && (
+                <button
+                  type="button"
+                  onClick={() => setMobileSidebarOpen(true)}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-border/70 bg-card/70 text-muted-foreground transition-colors hover:text-foreground hover:border-primary/25 md:hidden"
+                  aria-label="Open navigation"
+                >
+                  <PanelLeft size={15} />
+                </button>
+              )}
               <span className="truncate text-sm font-medium text-foreground">
                 {conversation?.title || t("newWorkspace")}
               </span>
@@ -1450,7 +1502,7 @@ export default function ChatPage() {
           </div>
 
           {filesPanelOpen && (
-            <div className="w-80 border-l border-border/50 flex flex-col bg-background/80 backdrop-blur-sm flex-shrink-0">
+            <div className={`${isMobileViewport ? "absolute inset-0 z-30 w-full" : "w-80 border-l"} border-border/50 flex flex-col bg-background/95 backdrop-blur-md flex-shrink-0`}>
               <div className="h-10 border-b border-border/50 flex items-center justify-between px-3 flex-shrink-0">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-medium">

@@ -2,12 +2,11 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { db, usersTable, referralsTable, referralSettingsTable } from "@workspace/db";
 import { eq, and, count } from "drizzle-orm";
 import crypto from "crypto";
-import { getSessionUserId } from "../lib/auth-session";
 
 const router: IRouter = Router();
 
 function getUserId(req: Request): number | null {
-  return getSessionUserId(req);
+  return req.userId ?? null;
 }
 
 function generateReferralCode(): string {

@@ -7,8 +7,9 @@ import { ENABLE_ADMIN_EMAIL_BOOTSTRAP, IS_PRODUCTION } from "../config";
 import {
   clearAuthCookie,
   clearCsrfCookie,
+  getAuthTokenFromRequest,
   getCsrfToken,
-  getSessionUserId,
+  revokeSessionToken,
   setAuthCookie,
   setCsrfCookie,
   signAuthToken,
@@ -74,7 +75,7 @@ router.get("/session", async (req, res) => {
       setCsrfCookie(res);
     }
 
-    const userId = getSessionUserId(req);
+    const userId = req.userId;
     if (!userId) {
       res.json({ authenticated: false, user: null });
       return;
@@ -98,7 +99,7 @@ router.get("/me", async (req, res) => {
       setCsrfCookie(res);
     }
 
-    const userId = getSessionUserId(req);
+    const userId = req.userId;
     if (!userId) {
       res.status(401).json({ error: "Unauthorized" });
       return;
@@ -239,7 +240,8 @@ router.post("/login", async (req, res) => {
   }
 });
 
-router.post("/logout", (_req, res) => {
+router.post("/logout", async (req, res) => {
+  await revokeSessionToken(getAuthTokenFromRequest(req));
   clearAuthCookie(res);
   clearCsrfCookie(res);
   res.json({ message: "Logged out" });
@@ -247,7 +249,7 @@ router.post("/logout", (_req, res) => {
 
 router.get("/token-usage", async (req, res) => {
   try {
-    const userId = getSessionUserId(req);
+    const userId = req.userId;
     if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
     const today = new Date().toISOString().slice(0, 10);
     const usage = await db.select().from(tokenUsageTable)
@@ -267,7 +269,7 @@ router.get("/token-usage", async (req, res) => {
 
 router.post("/token-usage", async (req, res) => {
   try {
-    const userId = getSessionUserId(req);
+    const userId = req.userId;
     if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
     const tokens = Number(req.body.tokens);
     if (!Number.isInteger(tokens) || tokens <= 0) { res.status(400).json({ error: "Invalid token count" }); return; }

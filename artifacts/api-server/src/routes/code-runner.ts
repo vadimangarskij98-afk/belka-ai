@@ -4,7 +4,6 @@ import { writeFile, unlink, mkdir } from "fs/promises";
 import { join } from "path";
 import { randomUUID } from "crypto";
 import { tmpdir } from "os";
-import { getSessionUserId } from "../lib/auth-session";
 
 const router: IRouter = Router();
 
@@ -44,7 +43,7 @@ function truncate(str: string, max: number): string {
 }
 
 function requireAuth(req: any, res: any, next: any): void {
-  if (!getSessionUserId(req)) {
+  if (!req.userId) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }

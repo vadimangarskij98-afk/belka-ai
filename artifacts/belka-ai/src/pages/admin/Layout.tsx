@@ -52,11 +52,34 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 
       <main className="flex-1 overflow-y-auto p-4 sm:p-8">
         <div className="max-w-6xl mx-auto">
-          <div className="md:hidden mb-4">
+          <div className="md:hidden mb-5 space-y-3">
             <Link href="/chat" className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors">
               <ArrowLeft size={16} />
               <span className="text-sm font-medium">{t("backToApp")}</span>
             </Link>
+
+            <div className="overflow-x-auto pb-1">
+              <div className="flex min-w-max gap-2">
+                {navItems.map((item) => {
+                  const isActive = location === item.href;
+                  return (
+                    <Link key={item.href} href={item.href}>
+                      <div
+                        className={cn(
+                          "inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition-all",
+                          isActive
+                            ? "border-primary/20 bg-primary text-white shadow-lg shadow-primary/20"
+                            : "border-border/70 bg-card/70 text-muted-foreground hover:border-primary/20 hover:text-foreground",
+                        )}
+                      >
+                        <item.icon size={14} />
+                        {t(item.labelKey)}
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
           </div>
           {children}
         </div>

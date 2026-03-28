@@ -2,6 +2,7 @@ import crypto from "crypto";
 import type { Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import { JWT_SECRET } from "../config";
+import { getRedisValue, setRedisValue } from "./redis";
 
 export const AUTH_COOKIE_NAME = "belka_session";
 export const CSRF_COOKIE_NAME = "belka_csrf";
@@ -11,7 +12,10 @@ const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
 type SessionPayload = {
   id: number;
+  jti?: string;
 };
+
+const REVOKED_SESSION_PREFIX = "auth:revoked:";
 
 function getCookieSameSite(): "lax" | "none" {
   return IS_PRODUCTION ? "none" : "lax";
@@ -32,7 +36,7 @@ function randomToken(): string {
 }
 
 export function signAuthToken(userId: number): string {
-  return jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: "30d" });
+  return jwt.sign({ id: userId, jti: crypto.randomUUID() }, JWT_SECRET, { expiresIn: "30d" });
 }
 
 export function setAuthCookie(res: Response, token: string): void {
@@ -83,13 +87,71 @@ export function getAuthTokenFromRequest(req: Request): string | null {
   return typeof cookieToken === "string" && cookieToken.trim() ? cookieToken.trim() : null;
 }
 
-export function getSessionUserId(req: Request): number | null {
+function getTokenFingerprint(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function getRevokedSessionKey(token: string): string {
+  return `${REVOKED_SESSION_PREFIX}${getTokenFingerprint(token)}`;
+}
+
+function verifySessionToken(token: string): SessionPayload | null {
   try {
-    const token = getAuthTokenFromRequest(req);
-    if (!token) return null;
-    const decoded = jwt.verify(token, JWT_SECRET) as SessionPayload;
-    return decoded.id;
+    return jwt.verify(token, JWT_SECRET) as SessionPayload;
   } catch {
     return null;
   }
+}
+
+export function getSessionUserId(req: Request): number | null {
+  const token = getAuthTokenFromRequest(req);
+  if (!token) return null;
+
+  const decoded = verifySessionToken(token);
+  return decoded?.id ?? null;
+}
+
+function getSessionTtlSeconds(token: string): number {
+  const decoded = jwt.decode(token) as jwt.JwtPayload | null;
+  if (typeof decoded?.exp === "number") {
+    return Math.max(1, decoded.exp - Math.floor(Date.now() / 1000));
+  }
+
+  return 30 * 24 * 60 * 60;
+}
+
+export async function isAuthTokenRevoked(token: string): Promise<boolean> {
+  const revoked = await getRedisValue(getRevokedSessionKey(token));
+  return revoked === "1";
+}
+
+export async function getVerifiedSessionUserId(req: Request): Promise<number | null> {
+  const token = getAuthTokenFromRequest(req);
+  if (!token) {
+    return null;
+  }
+
+  const decoded = verifySessionToken(token);
+  if (!decoded?.id) {
+    return null;
+  }
+
+  if (await isAuthTokenRevoked(token)) {
+    return null;
+  }
+
+  return decoded.id;
+}
+
+export async function revokeSessionToken(token: string | null): Promise<void> {
+  if (!token) {
+    return;
+  }
+
+  const decoded = verifySessionToken(token);
+  if (!decoded?.id) {
+    return;
+  }
+
+  await setRedisValue(getRevokedSessionKey(token), "1", getSessionTtlSeconds(token));
 }

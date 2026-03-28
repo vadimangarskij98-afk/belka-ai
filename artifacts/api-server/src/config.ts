@@ -43,6 +43,7 @@ export const JWT_SECRET = ENV_JWT_SECRET ?? DEFAULT_DEV_JWT_SECRET;
 export const BELKA_CODER_API_BASE_URL = trimTrailingSlash(
   readEnv("BELKA_CODER_API_BASE_URL") ?? DEFAULT_BELKA_CODER_API_BASE_URL,
 );
+export const REDIS_URL = readEnv("REDIS_URL") ?? "";
 export const BELKA_DEFAULT_IMAGE_MODEL = readEnv("BELKA_DEFAULT_IMAGE_MODEL") ?? "zimage";
 export const OPENROUTER_API_URL = readEnv("OPENROUTER_API_URL") ?? DEFAULT_OPENROUTER_API_URL;
 export const POLLINATIONS_API_KEY = readEnv("POLLINATIONS_API_KEY") ?? "";

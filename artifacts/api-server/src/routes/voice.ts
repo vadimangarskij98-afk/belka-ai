@@ -9,13 +9,16 @@ import {
   VOICE_PROVIDER_DEFAULT,
   type VoiceProvider,
 } from "../config";
+import { createBelkaRateLimiter } from "../lib/rate-limit";
 
 const router: IRouter = Router();
-
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT = 40;
-const RATE_WINDOW = 60_000;
 const VOICE_SETTINGS_SCOPE = "global";
+const voiceSynthesisLimiter = createBelkaRateLimiter({
+  prefix: "voice-synthesize",
+  windowMs: 60_000,
+  max: 18,
+  message: { error: "Too many voice synthesis requests" },
+});
 
 type ConcreteVoiceProvider = Exclude<VoiceProvider, "auto" | "browser">;
 type VoicePresetId = "jarvis_ru" | "operator_ru" | "warm_ru" | "calm_ru";
@@ -113,26 +116,6 @@ const VOICE_PRESETS: Record<VoicePresetId, VoicePreset> = {
     speed: 0.96,
   },
 };
-
-function voiceRateLimit(req: Request, res: Response, next: NextFunction) {
-  const ip = req.ip || "unknown";
-  const now = Date.now();
-  const entry = rateLimitMap.get(ip);
-
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_WINDOW });
-    next();
-    return;
-  }
-
-  if (entry.count >= RATE_LIMIT) {
-    res.status(429).json({ error: "Too many voice requests" });
-    return;
-  }
-
-  entry.count++;
-  next();
-}
 
 function sanitizeText(value: string | undefined): string {
   return (value ?? "").replace(/\s+/g, " ").trim();
@@ -576,7 +559,7 @@ router.get("/voices", async (req, res) => {
   });
 });
 
-router.post("/synthesize", voiceRateLimit, async (req, res) => {
+router.post("/synthesize", voiceSynthesisLimiter, async (req, res) => {
   const body = (req.body ?? {}) as VoiceSynthesizeBody;
   const text = sanitizeText(body.text ?? body.input);
 

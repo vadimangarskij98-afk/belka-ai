@@ -27,17 +27,16 @@ import gitRouter from "./git";
 import previewRouter from "./preview";
 import referralsRouter from "./referrals";
 import { BELKA_CODER_API_BASE_URL, ENABLE_PROJECT_TOOLS, normalizeBelkaMode } from "../config";
-import { getSessionUserId } from "../lib/auth-session";
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const userId = getSessionUserId(req);
+  const userId = req.userId;
   if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
   req.userId = userId;
   next();
 }
 
 async function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const userId = getSessionUserId(req);
+  const userId = req.userId;
   if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
   const users = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   if (users.length === 0 || users[0].role !== "admin") {

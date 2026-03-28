@@ -91,8 +91,7 @@ export default function AuthPage() {
             <button
               type="button"
               disabled
-              title="Soon"
-              className="flex items-center justify-center gap-2 py-3 rounded-xl border border-border text-sm font-medium text-muted-foreground/60 cursor-not-allowed opacity-70"
+              className="flex items-center justify-center gap-2 py-3 rounded-xl border border-border bg-card/40 text-sm font-medium text-muted-foreground/60 cursor-not-allowed opacity-75"
             >
               <svg width="18" height="18" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
@@ -101,19 +100,24 @@ export default function AuthPage() {
                 <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
               </svg>
               {t("google")}
+              <span className="rounded-full border border-border/70 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.12em]">Soon</span>
             </button>
             <button
               type="button"
               disabled
-              title="Soon"
-              className="flex items-center justify-center gap-2 py-3 rounded-xl border border-border text-sm font-medium text-muted-foreground/60 cursor-not-allowed opacity-70"
+              className="flex items-center justify-center gap-2 py-3 rounded-xl border border-border bg-card/40 text-sm font-medium text-muted-foreground/60 cursor-not-allowed opacity-75"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
               </svg>
               {t("telegram")}
+              <span className="rounded-full border border-border/70 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.12em]">Soon</span>
             </button>
           </div>
+
+          <p className="mb-6 -mt-2 text-center text-xs text-muted-foreground">
+            Google and Telegram sign-in are in design review. Email auth is the working path right now.
+          </p>
 
           <div className="flex items-center gap-3 mb-6">
             <div className="flex-1 h-px bg-border" />
@@ -132,48 +136,66 @@ export default function AuthPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="relative">
-              <Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="email"
-                name="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder={t("email")}
-                className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-background/80 backdrop-blur-sm text-foreground placeholder:text-muted-foreground focus:border-primary transition-colors"
-              />
+            <div className="space-y-1.5">
+              <label htmlFor="auth-email" className="mb-1.5 block text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                {t("email")}
+              </label>
+              <div className="relative">
+                <Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  id="auth-email"
+                  type="email"
+                  name="email"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder={t("email")}
+                  className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-background/80 backdrop-blur-sm text-foreground placeholder:text-muted-foreground focus:border-primary transition-colors"
+                />
+              </div>
             </div>
 
             {mode === "register" && (
-              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="relative">
-                <User size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  type="text"
-                  name="username"
-                  autoComplete="username"
-                  required
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder={t("username")}
-                  className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-background/80 backdrop-blur-sm text-foreground placeholder:text-muted-foreground focus:border-primary transition-colors"
-                />
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="space-y-1.5">
+                <label htmlFor="auth-username" className="mb-1.5 block text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                  {t("username")}
+                </label>
+                <div className="relative">
+                  <User size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    id="auth-username"
+                    type="text"
+                    name="username"
+                    autoComplete="username"
+                    required
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder={t("username")}
+                    className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-background/80 backdrop-blur-sm text-foreground placeholder:text-muted-foreground focus:border-primary transition-colors"
+                  />
+                </div>
               </motion.div>
             )}
 
-            <div className="relative">
-              <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="password"
-                name="password"
-                autoComplete={mode === "login" ? "current-password" : "new-password"}
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={t("password")}
-                className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-background/80 backdrop-blur-sm text-foreground placeholder:text-muted-foreground focus:border-primary transition-colors"
-              />
+            <div className="space-y-1.5">
+              <label htmlFor="auth-password" className="mb-1.5 block text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                {t("password")}
+              </label>
+              <div className="relative">
+                <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  id="auth-password"
+                  type="password"
+                  name="password"
+                  autoComplete={mode === "login" ? "current-password" : "new-password"}
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={t("password")}
+                  className="w-full pl-11 pr-4 py-3 rounded-xl border border-border bg-background/80 backdrop-blur-sm text-foreground placeholder:text-muted-foreground focus:border-primary transition-colors"
+                />
+              </div>
             </div>
 
             <button

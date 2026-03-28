@@ -4,7 +4,6 @@ import { eq } from "drizzle-orm";
 import {
   clearGithubOauthStateCookie,
   getGithubOauthState,
-  getSessionUserId,
   setGithubOauthStateCookie,
 } from "../lib/auth-session";
 import { decryptSecret, encryptSecret } from "../lib/secrets";
@@ -14,7 +13,7 @@ const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID || "";
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET || "";
 
 function getUserId(req: Request): number | null {
-  return getSessionUserId(req);
+  return req.userId ?? null;
 }
 
 router.get("/auth/url", (req, res) => {

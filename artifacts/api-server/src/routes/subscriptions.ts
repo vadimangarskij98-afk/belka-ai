@@ -1,13 +1,13 @@
 import { Router, type IRouter } from "express";
 import { db, subscriptionPlansTable, promoCodesTable, tokenUsageTable, usersTable } from "@workspace/db";
 import { eq, and, sql } from "drizzle-orm";
-import { getSessionUserId } from "../lib/auth-session";
 import { parseStoredStringArray } from "../lib/serialized-arrays";
 
 const router: IRouter = Router();
+const ENABLE_PAID_PLAN_SELF_SERVICE = process.env.ENABLE_PAID_PLAN_SELF_SERVICE === "true";
 
 function getUserId(req: any): number | null {
-  return getSessionUserId(req);
+  return req.userId ?? null;
 }
 
 router.get("/plans", async (req, res) => {
@@ -42,6 +42,13 @@ router.post("/subscribe", async (req, res) => {
     }
 
     const plan = plans[0];
+    if (plan.price > 0 && !ENABLE_PAID_PLAN_SELF_SERVICE) {
+      res.status(503).json({
+        error: "Paid plan activation is disabled until billing is configured",
+      });
+      return;
+    }
+
     let discount = 0;
 
     if (promoCode) {

@@ -1,6 +1,9 @@
 import { Router, type IRouter } from "express";
+import { lookup } from "node:dns/promises";
+import net from "node:net";
 
 const router: IRouter = Router();
+const MAX_REDIRECTS = 3;
 
 router.post("/web", async (req, res) => {
   try {
@@ -58,22 +61,118 @@ router.post("/web", async (req, res) => {
   }
 });
 
-function isAllowedUrl(urlStr: string): boolean {
+function isBlockedHostname(host: string): boolean {
+  const normalized = host.toLowerCase();
+  const blocked = [
+    "localhost",
+    "0.0.0.0",
+    "127.0.0.1",
+    "::1",
+    "[::1]",
+    "169.254.169.254",
+    "metadata.google.internal",
+    "metadata.google",
+  ];
+
+  if (blocked.includes(normalized)) return true;
+  if (normalized.endsWith(".internal") || normalized.endsWith(".local")) return true;
+  return false;
+}
+
+function isPrivateAddress(address: string): boolean {
+  const ipType = net.isIP(address);
+  if (ipType === 4) {
+    return (
+      address.startsWith("10.")
+      || address.startsWith("127.")
+      || address.startsWith("169.254.")
+      || address.startsWith("192.168.")
+      || /^172\.(1[6-9]|2\d|3[0-1])\./.test(address)
+    );
+  }
+
+  if (ipType === 6) {
+    const normalized = address.toLowerCase();
+    return (
+      normalized === "::1"
+      || normalized.startsWith("fc")
+      || normalized.startsWith("fd")
+      || normalized.startsWith("fe80:")
+      || normalized.startsWith("::ffff:127.")
+      || normalized.startsWith("::ffff:10.")
+      || normalized.startsWith("::ffff:192.168.")
+      || /^::ffff:172\.(1[6-9]|2\d|3[0-1])\./.test(normalized)
+    );
+  }
+
+  return false;
+}
+
+async function resolveValidatedUrl(urlStr: string): Promise<URL | null> {
   try {
     const parsed = new URL(urlStr);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
-    const host = parsed.hostname.toLowerCase();
-    const blocked = [
-      "localhost", "127.0.0.1", "0.0.0.0", "[::1]", "169.254.169.254",
-      "metadata.google.internal", "metadata.google",
-    ];
-    if (blocked.includes(host)) return false;
-    if (host.startsWith("10.") || host.startsWith("192.168.") || host.startsWith("172.")) return false;
-    if (host.endsWith(".internal") || host.endsWith(".local")) return false;
-    return true;
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    if (parsed.username || parsed.password) return null;
+    if (isBlockedHostname(parsed.hostname)) return null;
+
+    const resolved = await lookup(parsed.hostname, { all: true, verbatim: true });
+    if (resolved.length === 0) return null;
+
+    for (const entry of resolved) {
+      if (isPrivateAddress(entry.address)) {
+        return null;
+      }
+    }
+
+    return parsed;
   } catch {
-    return false;
+    return null;
   }
+}
+
+async function fetchSafePage(urlStr: string): Promise<{ content: string; url: string }> {
+  let currentUrl = await resolveValidatedUrl(urlStr);
+  if (!currentUrl) {
+    throw new Error("URL not allowed");
+  }
+
+  for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount++) {
+    const response = await fetch(currentUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; BelkaAI/1.0)",
+      },
+      redirect: "manual",
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    const location = response.headers.get("location");
+    if (location && response.status >= 300 && response.status < 400) {
+      if (redirectCount === MAX_REDIRECTS) {
+        throw new Error("Too many redirects");
+      }
+
+      const nextUrl = await resolveValidatedUrl(new URL(location, currentUrl).toString());
+      if (!nextUrl) {
+        throw new Error("Redirect target not allowed");
+      }
+
+      currentUrl = nextUrl;
+      continue;
+    }
+
+    const html = await response.text();
+    const content = html
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 5000);
+
+    return { content, url: currentUrl.toString() };
+  }
+
+  throw new Error("Unable to fetch page");
 }
 
 router.post("/fetch-page", async (req, res) => {
@@ -84,29 +183,14 @@ router.post("/fetch-page", async (req, res) => {
       return;
     }
 
-    if (!isAllowedUrl(url)) {
+    const validatedUrl = await resolveValidatedUrl(url);
+    if (!validatedUrl) {
       res.status(403).json({ error: "URL not allowed" });
       return;
     }
 
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; BelkaAI/1.0)",
-      },
-      redirect: "follow",
-      signal: AbortSignal.timeout(10000),
-    });
-
-    const html = await response.text();
-    const textContent = html
-      .replace(/<script[\s\S]*?<\/script>/gi, "")
-      .replace(/<style[\s\S]*?<\/style>/gi, "")
-      .replace(/<[^>]*>/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 5000);
-
-    res.json({ content: textContent, url });
+    const result = await fetchSafePage(validatedUrl.toString());
+    res.json(result);
   } catch (err) {
     req.log.error({ err }, "Fetch page error");
     res.status(500).json({ error: "Failed to fetch page" });
