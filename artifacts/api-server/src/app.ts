@@ -5,6 +5,7 @@ import rateLimit from "express-rate-limit";
 import pinoHttp from "pino-http";
 import cookieParser from "cookie-parser";
 import router from "./routes";
+import authRouter from "./routes/auth";
 import { logger } from "./lib/logger";
 import { hasValidCsrfToken, setCsrfCookie } from "./lib/auth-session";
 import { IS_PRODUCTION } from "./config";
@@ -139,6 +140,9 @@ app.use("/api/belka/chat", chatLimiter);
 app.use("/api/voice", voiceLimiter);
 app.use("/api/mcp", mcpLimiter);
 
+// Mount auth routes directly so csrf/session bootstrap never depends on
+// downstream router composition or protected sub-routers.
+app.use("/api/auth", authRouter);
 app.use("/api", router);
 
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {

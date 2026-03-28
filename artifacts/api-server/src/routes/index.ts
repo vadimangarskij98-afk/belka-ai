@@ -8,7 +8,6 @@ declare module "express" {
   }
 }
 import healthRouter from "./health";
-import authRouter from "./auth";
 import conversationsRouter from "./conversations";
 import agentsRouter from "./agents";
 import adminRouter from "./admin";
@@ -90,7 +89,6 @@ async function fetchBelkaChat(payload: unknown) {
 }
 
 router.use(healthRouter);
-router.use("/auth", authRouter);
 router.use("/conversations", requireAuth, conversationsRouter);
 router.use("/agents", requireAdmin, agentsRouter);
 router.use("/admin", requireAdmin, adminRouter);
