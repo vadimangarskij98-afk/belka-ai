@@ -4,10 +4,12 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import pinoHttp from "pino-http";
 import cookieParser from "cookie-parser";
+import { db, usersTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 import router from "./routes";
 import authRouter from "./routes/auth";
 import { logger } from "./lib/logger";
-import { hasValidCsrfToken, setCsrfCookie } from "./lib/auth-session";
+import { getCsrfToken, getSessionUserId, hasValidCsrfToken, setCsrfCookie } from "./lib/auth-session";
 import { IS_PRODUCTION } from "./config";
 
 const app: Express = express();
@@ -140,8 +142,54 @@ app.use("/api/belka/chat", chatLimiter);
 app.use("/api/voice", voiceLimiter);
 app.use("/api/mcp", mcpLimiter);
 
-// Mount auth routes directly so csrf/session bootstrap never depends on
-// downstream router composition or protected sub-routers.
+function serializeSessionUser(user: typeof usersTable.$inferSelect) {
+  return {
+    id: String(user.id),
+    email: user.email,
+    username: user.username,
+    role: user.role,
+    plan: user.plan,
+    referralCode: user.referralCode,
+    bonusRequests: user.bonusRequests,
+    createdAt: user.createdAt.toISOString(),
+  };
+}
+
+app.get("/api/auth/csrf", (req: Request, res: Response) => {
+  req.log.info("Auth csrf bootstrap hit");
+  const token = setCsrfCookie(res, getCsrfToken(req) ?? undefined);
+  res.json({ csrfToken: token });
+});
+
+app.get("/api/auth/session", async (req: Request, res: Response) => {
+  req.log.info("Auth session bootstrap hit");
+
+  try {
+    if (!getCsrfToken(req)) {
+      setCsrfCookie(res);
+    }
+
+    const userId = getSessionUserId(req);
+    if (!userId) {
+      res.json({ authenticated: false, user: null });
+      return;
+    }
+
+    const users = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+    if (users.length === 0) {
+      res.json({ authenticated: false, user: null });
+      return;
+    }
+
+    res.json({ authenticated: true, user: serializeSessionUser(users[0]) });
+  } catch (err) {
+    req.log.warn({ err }, "Auth session bootstrap failed");
+    res.json({ authenticated: false, user: null });
+  }
+});
+
+// Mount the rest of auth routes directly so login/register/logout stay public
+// and do not depend on downstream router composition.
 app.use("/api/auth", authRouter);
 app.use("/api", router);
 
