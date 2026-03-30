@@ -194,7 +194,6 @@ async function requestViaValidatedAddress(target: ValidatedUrl, address: LookupA
         port: target.url.port || (target.url.protocol === "https:" ? 443 : 80),
         path: `${target.url.pathname}${target.url.search}`,
         method: "GET",
-        servername: target.url.hostname,
         lookup: lookupForAddress,
         headers: {
           "User-Agent": USER_AGENT,
