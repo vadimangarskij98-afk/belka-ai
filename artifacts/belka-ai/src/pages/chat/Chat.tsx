@@ -228,13 +228,13 @@ const TOOL_LABELS: Record<string, string> = {
 };
 
 const VISIBLE_STEP_LABELS: Record<string, string> = {
-  thinking: "Understanding the task",
-  searching: "Checking live sources",
-  generating: "Drafting the response",
-  generating_image: "Generating visuals",
-  coding: "Implementing the solution",
-  reviewing: "Reviewing the output",
-  writing: "Finalizing the answer",
+  thinking: "Понимание задачи",
+  searching: "Проверка источников",
+  generating: "Подготовка ответа",
+  generating_image: "Создание изображения",
+  coding: "Реализация решения",
+  reviewing: "Проверка результата",
+  writing: "Финальная сборка ответа",
 };
 
 const VISIBLE_TOOL_LABELS: Record<string, string> = {
@@ -472,14 +472,14 @@ function VoiceCommandDock({
         : "border-secondary/25 bg-secondary/10 text-secondary";
 
   const statusLabel = !voiceConfig.voiceEnabled
-    ? "Voice disabled"
+    ? "Голос отключён"
     : voiceAssistant.isDictating
-      ? "Dictation live"
+      ? "Идёт диктовка"
       : voiceAssistant.isProcessing
-        ? "Routing command"
+        ? "Обрабатываю команду"
         : voiceAssistant.isActive
-          ? "Listening"
-          : "Voice standby";
+          ? "Слушаю"
+          : "Голосовой режим в ожидании";
 
   const caption = !voiceConfig.voiceEnabled
     ? "Enable the global voice profile in admin settings."
@@ -602,7 +602,7 @@ function StreamingIndicator({ state, mode }: { state: StreamingState; mode: "cha
           <div className="glass-panel mb-2 w-full rounded-[24px] rounded-tl-[10px] border border-border/70 px-3 py-3">
             <div className="flex items-center gap-1.5 mb-1.5">
               <Globe size={12} className="text-accent" />
-              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">Sources</span>
+              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">Источники</span>
             </div>
             <div className="flex flex-wrap gap-1.5">
               {state.sources.map((src, i) => (
@@ -626,10 +626,10 @@ function StreamingIndicator({ state, mode }: { state: StreamingState; mode: "cha
           <div className="glass-panel mb-2 w-full rounded-[24px] rounded-tl-[10px] border border-border/70 px-3 py-3">
             <div className="flex items-center gap-1.5 mb-2">
               <ImageIcon size={12} className="text-secondary" />
-              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-secondary">Generated image</span>
+              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-secondary">Сгенерированное изображение</span>
             </div>
             <div className="relative group/img rounded-xl overflow-hidden">
-              <img src={state.imageUrl} alt={state.imagePrompt || "Generated image"} className="w-full max-w-md rounded-xl" loading="eager" />
+              <img src={state.imageUrl} alt={state.imagePrompt || "Сгенерированное изображение"} className="w-full max-w-md rounded-xl" loading="eager" />
               <a
                 href={state.imageUrl}
                 download={`belka-image-${Date.now()}.png`}
@@ -1368,7 +1368,7 @@ export default function ChatPage() {
               </span>
             </div>
             <div className="mt-1 text-[11px] text-muted-foreground">
-              {mode === "multi-agent" ? "Coordinated specialist workflow" : mode === "image" ? "Prompt-to-image workspace" : mode === "chat" ? "Conversational assistant mode" : "Execution-first coding surface"}
+              {mode === "multi-agent" ? "Согласованная работа нескольких агентов" : mode === "image" ? "Рабочее пространство для генерации изображений" : mode === "chat" ? "Диалоговый режим ассистента" : "Среда для инженерного выполнения"}
             </div>
           </div>
 
@@ -1623,24 +1623,24 @@ export default function ChatPage() {
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-2 pt-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded-full border border-border/70 bg-card/70 px-3 py-1 text-[11px] font-medium text-foreground/85">
-                    {mode === "multi-agent" ? "Coordinated agent run" : mode === "image" ? "Image generation flow" : mode === "chat" ? "Conversational guidance" : "Implementation surface"}
+                    {mode === "multi-agent" ? "Скоординированный запуск агентов" : mode === "image" ? "Поток генерации изображений" : mode === "chat" ? "Диалог с ассистентом" : "Рабочая поверхность разработки"}
                   </span>
                   {streaming.isStreaming ? (
                     <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary">
-                      BELKA is working
+                      BELKA работает
                     </span>
                   ) : voiceAssistant.isActive ? (
                     <span className="rounded-full border border-secondary/20 bg-secondary/10 px-3 py-1 text-[11px] font-medium text-secondary">
-                      Voice dock active
+                      Голосовой режим активен
                     </span>
                   ) : (
                     <span className="rounded-full border border-border/70 bg-card/70 px-3 py-1 text-[11px] font-medium text-muted-foreground">
-                      Uploads stay hidden until the backend upload route is real
+                      Загрузка файлов появится после подключения рабочего upload-маршрута
                     </span>
                   )}
                 </div>
                 <div className="text-[11px] text-muted-foreground">
-                  Shift+Enter for a new line
+                  Shift+Enter для новой строки
                 </div>
               </div>
               <textarea
@@ -1680,7 +1680,7 @@ export default function ChatPage() {
                     }}
                     disabled={!fileAttachmentsEnabled}
                     className={`p-1.5 rounded-lg transition-colors ${fileAttachmentsEnabled ? "text-muted-foreground hover:text-foreground hover:bg-muted" : "text-muted-foreground/40 cursor-not-allowed"}`}
-                    title={fileAttachmentsEnabled ? "Attach file" : "File uploads are not enabled yet"}
+                    title={fileAttachmentsEnabled ? "Прикрепить файл" : "Загрузка файлов пока недоступна"}
                   >
                     <Paperclip size={16} />
                   </button>
@@ -1691,7 +1691,7 @@ export default function ChatPage() {
                   {voiceAssistant.isDictating && (
                     <div className="flex items-center gap-1 rounded-full border border-[#F97316]/25 bg-[#F97316]/10 px-3 py-1 text-[11px] font-medium text-[#F97316]">
                       <span className="h-1.5 w-1.5 rounded-full bg-[#F97316] animate-pulse" />
-                      Dictation live
+                      Идёт диктовка
                     </div>
                   )}
                   <button
@@ -1700,7 +1700,7 @@ export default function ChatPage() {
                     className="inline-flex items-center gap-2 rounded-2xl belka-gradient px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 transition-all disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Send size={16} className={streaming.isStreaming ? "animate-pulse" : ""} />
-                    Send
+                    Отправить
                   </button>
                 </div>
 
@@ -1740,7 +1740,7 @@ export default function ChatPage() {
             <button onClick={() => setImagePreviewUrl(null)} className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-black/80 text-white flex items-center justify-center shadow-lg hover:bg-black z-10 border border-white/20">
               <X size={16} />
             </button>
-            <img src={imagePreviewUrl} alt="Preview" className="max-w-full max-h-[85vh] rounded-xl shadow-2xl object-contain" />
+            <img src={imagePreviewUrl} alt="Предпросмотр" className="max-w-full max-h-[85vh] rounded-xl shadow-2xl object-contain" />
             <a href={imagePreviewUrl} download="belka-image.png" target="_blank" rel="noopener noreferrer"
               className="absolute bottom-3 right-3 p-2.5 rounded-lg bg-black/60 backdrop-blur-sm text-white hover:bg-black/80 transition-colors border border-white/20">
               <Download size={18} />
@@ -1787,7 +1787,7 @@ export default function ChatPage() {
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">
               <span className="text-sm font-semibold text-foreground">Превью</span>
               <div className="flex items-center gap-2">
-                <button onClick={() => setPreviewStatusOpen(prev => !prev)} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground" title="Server status">
+                <button onClick={() => setPreviewStatusOpen(prev => !prev)} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground" title="Статус сервера">
                   <Server size={14} />
                 </button>
                 <button onClick={() => setPreviewOpen(false)} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
@@ -1848,7 +1848,7 @@ function MessageBubble({ msg, isLast, isStreaming, onImagePreview }: {
           <div className="glass-panel mb-1 w-full rounded-[24px] rounded-tl-[10px] border border-border/70 px-3 py-3">
             <div className="flex items-center gap-1.5 mb-1">
               <Globe size={12} className="text-accent" />
-              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">Sources</span>
+              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">Источники</span>
             </div>
             <div className="flex flex-wrap gap-1.5">
               {sources.map((src: any, i: number) => (
@@ -1867,12 +1867,12 @@ function MessageBubble({ msg, isLast, isStreaming, onImagePreview }: {
           <div className="glass-panel mb-1 w-full rounded-[24px] rounded-tl-[10px] border border-border/70 px-3 py-3">
             <div className="flex items-center gap-1.5 mb-2">
               <ImageIcon size={12} className="text-secondary" />
-              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-secondary">Image</span>
+              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-secondary">Изображение</span>
             </div>
             <div className="relative group/img rounded-xl overflow-hidden">
               <img
                 src={imageUrl}
-                alt="Generated image"
+                alt="Сгенерированное изображение"
                 className="w-full max-w-md rounded-xl cursor-pointer hover:opacity-90 transition-opacity"
                 loading="lazy"
                 onClick={() => onImagePreview?.(imageUrl)}

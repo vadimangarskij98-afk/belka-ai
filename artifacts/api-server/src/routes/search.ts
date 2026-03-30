@@ -1,9 +1,20 @@
 import { Router, type IRouter } from "express";
+import type { LookupAddress } from "node:dns";
 import { lookup } from "node:dns/promises";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import net from "node:net";
+import { brotliDecompressSync, gunzipSync, inflateSync } from "node:zlib";
 
 const router: IRouter = Router();
 const MAX_REDIRECTS = 3;
+const FETCH_TIMEOUT_MS = 10_000;
+const USER_AGENT = "Mozilla/5.0 (compatible; BelkaAI/1.0)";
+
+type ValidatedUrl = {
+  url: URL;
+  addresses: LookupAddress[];
+};
 
 router.post("/web", async (req, res) => {
   try {
@@ -108,7 +119,7 @@ function isPrivateAddress(address: string): boolean {
   return false;
 }
 
-async function resolveValidatedUrl(urlStr: string): Promise<URL | null> {
+async function resolveValidatedUrl(urlStr: string): Promise<ValidatedUrl | null> {
   try {
     const parsed = new URL(urlStr);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
@@ -124,10 +135,100 @@ async function resolveValidatedUrl(urlStr: string): Promise<URL | null> {
       }
     }
 
-    return parsed;
+    return {
+      url: parsed,
+      addresses: resolved,
+    };
   } catch {
     return null;
   }
+}
+
+function decodeResponseBody(buffer: Buffer, encodingHeader: string | string[] | undefined): string {
+  const encoding = Array.isArray(encodingHeader) ? encodingHeader[0] : encodingHeader;
+
+  try {
+    switch (encoding?.toLowerCase()) {
+      case "br":
+        return brotliDecompressSync(buffer).toString("utf8");
+      case "gzip":
+        return gunzipSync(buffer).toString("utf8");
+      case "deflate":
+        return inflateSync(buffer).toString("utf8");
+      default:
+        return buffer.toString("utf8");
+    }
+  } catch {
+    return buffer.toString("utf8");
+  }
+}
+
+async function requestViaValidatedAddress(target: ValidatedUrl, address: LookupAddress) {
+  const requestImpl = target.url.protocol === "https:" ? httpsRequest : httpRequest;
+  const lookupForAddress = (
+    _hostname: string,
+    _options: { family?: number; hints?: number; all?: boolean },
+    callback: (err: NodeJS.ErrnoException | null, address: string, family: number) => void,
+  ) => {
+    callback(null, address.address, address.family);
+  };
+
+  return new Promise<{
+    statusCode: number;
+    headers: Record<string, string | string[] | undefined>;
+    body: string;
+  }>((resolve, reject) => {
+    const request = requestImpl(
+      {
+        protocol: target.url.protocol,
+        hostname: target.url.hostname,
+        port: target.url.port || (target.url.protocol === "https:" ? 443 : 80),
+        path: `${target.url.pathname}${target.url.search}`,
+        method: "GET",
+        servername: target.url.hostname,
+        lookup: lookupForAddress,
+        headers: {
+          "User-Agent": USER_AGENT,
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Encoding": "gzip, deflate, br",
+          Host: target.url.host,
+        },
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        response.on("end", () => {
+          resolve({
+            statusCode: response.statusCode ?? 500,
+            headers: response.headers,
+            body: decodeResponseBody(Buffer.concat(chunks), response.headers["content-encoding"]),
+          });
+        });
+      },
+    );
+
+    request.setTimeout(FETCH_TIMEOUT_MS, () => {
+      request.destroy(new Error("Request timed out"));
+    });
+    request.on("error", reject);
+    request.end();
+  });
+}
+
+async function requestValidatedPage(target: ValidatedUrl) {
+  let lastError: unknown = null;
+
+  for (const address of target.addresses) {
+    try {
+      return await requestViaValidatedAddress(target, address);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Unable to reach host");
 }
 
 async function fetchSafePage(urlStr: string): Promise<{ content: string; url: string }> {
@@ -137,21 +238,16 @@ async function fetchSafePage(urlStr: string): Promise<{ content: string; url: st
   }
 
   for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount++) {
-    const response = await fetch(currentUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; BelkaAI/1.0)",
-      },
-      redirect: "manual",
-      signal: AbortSignal.timeout(10_000),
-    });
+    const response = await requestValidatedPage(currentUrl);
 
-    const location = response.headers.get("location");
-    if (location && response.status >= 300 && response.status < 400) {
+    const locationHeader = response.headers.location;
+    const location = Array.isArray(locationHeader) ? locationHeader[0] : locationHeader;
+    if (location && response.statusCode >= 300 && response.statusCode < 400) {
       if (redirectCount === MAX_REDIRECTS) {
         throw new Error("Too many redirects");
       }
 
-      const nextUrl = await resolveValidatedUrl(new URL(location, currentUrl).toString());
+      const nextUrl = await resolveValidatedUrl(new URL(location, currentUrl.url).toString());
       if (!nextUrl) {
         throw new Error("Redirect target not allowed");
       }
@@ -160,8 +256,7 @@ async function fetchSafePage(urlStr: string): Promise<{ content: string; url: st
       continue;
     }
 
-    const html = await response.text();
-    const content = html
+    const content = response.body
       .replace(/<script[\s\S]*?<\/script>/gi, "")
       .replace(/<style[\s\S]*?<\/style>/gi, "")
       .replace(/<[^>]*>/g, " ")
@@ -169,7 +264,7 @@ async function fetchSafePage(urlStr: string): Promise<{ content: string; url: st
       .trim()
       .slice(0, 5000);
 
-    return { content, url: currentUrl.toString() };
+    return { content, url: currentUrl.url.toString() };
   }
 
   throw new Error("Unable to fetch page");
@@ -189,7 +284,7 @@ router.post("/fetch-page", async (req, res) => {
       return;
     }
 
-    const result = await fetchSafePage(validatedUrl.toString());
+    const result = await fetchSafePage(validatedUrl.url.toString());
     res.json(result);
   } catch (err) {
     req.log.error({ err }, "Fetch page error");
