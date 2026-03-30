@@ -62,12 +62,12 @@ router.post("/web", async (req, res) => {
         });
       }
     } catch (searchErr) {
-      req.log.warn({ err: searchErr }, "DuckDuckGo search failed");
+      req.log?.warn?.({ err: searchErr }, "DuckDuckGo search failed");
     }
 
     res.json({ results, query });
   } catch (err) {
-    req.log.error({ err }, "Web search error");
+    req.log?.error?.({ err }, "Web search error");
     res.status(500).json({ error: "Search failed" });
   }
 });
@@ -336,7 +336,7 @@ router.post("/fetch-page", async (req, res) => {
     const result = await fetchSafePage(validatedUrl.url.toString());
     res.json(result);
   } catch (err) {
-    req.log.error({ err }, "Fetch page error");
+    req.log?.error?.({ err }, "Fetch page error");
     const classified = classifyFetchPageError(err);
     res.status(classified.status).json(classified.payload);
   }
