@@ -279,6 +279,46 @@ async function fetchSafePage(urlStr: string): Promise<{ content: string; url: st
   throw new Error("Unable to fetch page");
 }
 
+function classifyFetchPageError(error: unknown) {
+  const message = error instanceof Error ? error.message : "Unknown upstream error";
+  const normalized = message.toLowerCase();
+
+  if (message === "URL not allowed" || message === "Redirect target not allowed") {
+    return {
+      status: 403,
+      payload: { error: "URL not allowed" },
+    };
+  }
+
+  if (normalized.includes("timed out")) {
+    return {
+      status: 504,
+      payload: { error: "Upstream page timed out", detail: message },
+    };
+  }
+
+  if (
+    normalized.includes("certificate")
+    || normalized.includes("tls")
+    || normalized.includes("issuer")
+    || normalized.includes("unable to reach host")
+    || normalized.includes("socket hang up")
+    || normalized.includes("econnrefused")
+    || normalized.includes("ehostunreach")
+    || normalized.includes("enotfound")
+  ) {
+    return {
+      status: 502,
+      payload: { error: "Upstream page unavailable", detail: message },
+    };
+  }
+
+  return {
+    status: 500,
+    payload: { error: "Failed to fetch page" },
+  };
+}
+
 router.post("/fetch-page", async (req, res) => {
   try {
     const { url } = req.body;
@@ -297,7 +337,8 @@ router.post("/fetch-page", async (req, res) => {
     res.json(result);
   } catch (err) {
     req.log.error({ err }, "Fetch page error");
-    res.status(500).json({ error: "Failed to fetch page" });
+    const classified = classifyFetchPageError(err);
+    res.status(classified.status).json(classified.payload);
   }
 });
 
