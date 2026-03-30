@@ -168,8 +168,17 @@ async function requestViaValidatedAddress(target: ValidatedUrl, address: LookupA
   const lookupForAddress = (
     _hostname: string,
     _options: { family?: number; hints?: number; all?: boolean },
-    callback: (err: NodeJS.ErrnoException | null, address: string, family: number) => void,
+    callback: (
+      err: NodeJS.ErrnoException | null,
+      address: string | LookupAddress[],
+      family?: number,
+    ) => void,
   ) => {
+    if (_options.all) {
+      callback(null, [{ address: address.address, family: address.family }]);
+      return;
+    }
+
     callback(null, address.address, address.family);
   };
 
