@@ -1,10 +1,7 @@
 import { Router, type IRouter } from "express";
 import type { LookupAddress } from "node:dns";
 import { lookup } from "node:dns/promises";
-import { Agent as HttpAgent } from "node:http";
-import { Agent as HttpsAgent } from "node:https";
 import net from "node:net";
-import fetch from "node-fetch";
 
 const router: IRouter = Router();
 const MAX_REDIRECTS = 3;
@@ -144,28 +141,7 @@ async function resolveValidatedUrl(urlStr: string): Promise<ValidatedUrl | null>
   }
 }
 
-async function requestViaValidatedAddress(target: ValidatedUrl, address: LookupAddress) {
-  const lookupForAddress = (
-    _hostname: string,
-    _options: { family?: number; hints?: number; all?: boolean },
-    callback: (
-      err: NodeJS.ErrnoException | null,
-      address: string | LookupAddress[],
-      family?: number,
-    ) => void,
-  ) => {
-    if (_options.all) {
-      callback(null, [{ address: address.address, family: address.family }]);
-      return;
-    }
-
-    callback(null, address.address, address.family);
-  };
-
-  const agent = target.url.protocol === "https:"
-    ? new HttpsAgent({ lookup: lookupForAddress })
-    : new HttpAgent({ lookup: lookupForAddress });
-
+async function requestValidatedPage(target: ValidatedUrl) {
   const response = await fetch(target.url.toString(), {
     method: "GET",
     redirect: "manual",
@@ -173,9 +149,7 @@ async function requestViaValidatedAddress(target: ValidatedUrl, address: LookupA
     headers: {
       "User-Agent": USER_AGENT,
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      Host: target.url.host,
     },
-    agent: () => agent,
   });
 
   const headers: Record<string, string | string[] | undefined> = {};
@@ -188,20 +162,6 @@ async function requestViaValidatedAddress(target: ValidatedUrl, address: LookupA
     headers,
     body: await response.text(),
   };
-}
-
-async function requestValidatedPage(target: ValidatedUrl) {
-  let lastError: unknown = null;
-
-  for (const address of target.addresses) {
-    try {
-      return await requestViaValidatedAddress(target, address);
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  throw lastError instanceof Error ? lastError : new Error("Unable to reach host");
 }
 
 async function fetchSafePage(urlStr: string): Promise<{ content: string; url: string }> {
@@ -245,7 +205,13 @@ async function fetchSafePage(urlStr: string): Promise<{ content: string; url: st
 
 function classifyFetchPageError(error: unknown) {
   const message = error instanceof Error ? error.message : "Unknown upstream error";
+  const causeMessage = error instanceof Error && error.cause instanceof Error ? error.cause.message : "";
+  const causeCode = error instanceof Error && error.cause && typeof error.cause === "object" && "code" in error.cause
+    ? String((error.cause as { code?: unknown }).code ?? "")
+    : "";
   const normalized = message.toLowerCase();
+  const normalizedCause = causeMessage.toLowerCase();
+  const combined = `${normalized} ${normalizedCause} ${causeCode.toLowerCase()}`.trim();
 
   if (message === "URL not allowed" || message === "Redirect target not allowed") {
     return {
@@ -254,26 +220,28 @@ function classifyFetchPageError(error: unknown) {
     };
   }
 
-  if (normalized.includes("timed out")) {
+  if (combined.includes("timed out")) {
     return {
       status: 504,
-      payload: { error: "Upstream page timed out", detail: message },
+      payload: { error: "Upstream page timed out", detail: causeMessage || message },
     };
   }
 
   if (
-    normalized.includes("certificate")
-    || normalized.includes("tls")
-    || normalized.includes("issuer")
-    || normalized.includes("unable to reach host")
-    || normalized.includes("socket hang up")
-    || normalized.includes("econnrefused")
-    || normalized.includes("ehostunreach")
-    || normalized.includes("enotfound")
+    combined.includes("certificate")
+    || combined.includes("tls")
+    || combined.includes("issuer")
+    || combined.includes("unable to reach host")
+    || combined.includes("socket hang up")
+    || combined.includes("econnrefused")
+    || combined.includes("ehostunreach")
+    || combined.includes("enotfound")
+    || combined.includes("fetch failed")
+    || combined.includes("unable_to_get_issuer_cert_locally")
   ) {
     return {
       status: 502,
-      payload: { error: "Upstream page unavailable", detail: message },
+      payload: { error: "Upstream page unavailable", detail: causeMessage || message },
     };
   }
 
