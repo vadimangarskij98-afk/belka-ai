@@ -1,10 +1,10 @@
 import { Router, type IRouter } from "express";
 import type { LookupAddress } from "node:dns";
 import { lookup } from "node:dns/promises";
-import { request as httpRequest } from "node:http";
-import { request as httpsRequest } from "node:https";
+import { Agent as HttpAgent } from "node:http";
+import { Agent as HttpsAgent } from "node:https";
 import net from "node:net";
-import { brotliDecompressSync, gunzipSync, inflateSync } from "node:zlib";
+import fetch from "node-fetch";
 
 const router: IRouter = Router();
 const MAX_REDIRECTS = 3;
@@ -144,27 +144,7 @@ async function resolveValidatedUrl(urlStr: string): Promise<ValidatedUrl | null>
   }
 }
 
-function decodeResponseBody(buffer: Buffer, encodingHeader: string | string[] | undefined): string {
-  const encoding = Array.isArray(encodingHeader) ? encodingHeader[0] : encodingHeader;
-
-  try {
-    switch (encoding?.toLowerCase()) {
-      case "br":
-        return brotliDecompressSync(buffer).toString("utf8");
-      case "gzip":
-        return gunzipSync(buffer).toString("utf8");
-      case "deflate":
-        return inflateSync(buffer).toString("utf8");
-      default:
-        return buffer.toString("utf8");
-    }
-  } catch {
-    return buffer.toString("utf8");
-  }
-}
-
 async function requestViaValidatedAddress(target: ValidatedUrl, address: LookupAddress) {
-  const requestImpl = target.url.protocol === "https:" ? httpsRequest : httpRequest;
   const lookupForAddress = (
     _hostname: string,
     _options: { family?: number; hints?: number; all?: boolean },
@@ -182,47 +162,32 @@ async function requestViaValidatedAddress(target: ValidatedUrl, address: LookupA
     callback(null, address.address, address.family);
   };
 
-  return new Promise<{
-    statusCode: number;
-    headers: Record<string, string | string[] | undefined>;
-    body: string;
-  }>((resolve, reject) => {
-    const request = requestImpl(
-      {
-        protocol: target.url.protocol,
-        hostname: target.url.hostname,
-        port: target.url.port || (target.url.protocol === "https:" ? 443 : 80),
-        path: `${target.url.pathname}${target.url.search}`,
-        method: "GET",
-        lookup: lookupForAddress,
-        headers: {
-          "User-Agent": USER_AGENT,
-          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Encoding": "gzip, deflate, br",
-          Host: target.url.host,
-        },
-      },
-      (response) => {
-        const chunks: Buffer[] = [];
-        response.on("data", (chunk) => {
-          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-        });
-        response.on("end", () => {
-          resolve({
-            statusCode: response.statusCode ?? 500,
-            headers: response.headers,
-            body: decodeResponseBody(Buffer.concat(chunks), response.headers["content-encoding"]),
-          });
-        });
-      },
-    );
+  const agent = target.url.protocol === "https:"
+    ? new HttpsAgent({ lookup: lookupForAddress })
+    : new HttpAgent({ lookup: lookupForAddress });
 
-    request.setTimeout(FETCH_TIMEOUT_MS, () => {
-      request.destroy(new Error("Request timed out"));
-    });
-    request.on("error", reject);
-    request.end();
+  const response = await fetch(target.url.toString(), {
+    method: "GET",
+    redirect: "manual",
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    headers: {
+      "User-Agent": USER_AGENT,
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      Host: target.url.host,
+    },
+    agent: () => agent,
   });
+
+  const headers: Record<string, string | string[] | undefined> = {};
+  response.headers.forEach((value, key) => {
+    headers[key] = value;
+  });
+
+  return {
+    statusCode: response.status,
+    headers,
+    body: await response.text(),
+  };
 }
 
 async function requestValidatedPage(target: ValidatedUrl) {
