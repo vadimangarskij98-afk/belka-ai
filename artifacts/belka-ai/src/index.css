@@ -61,7 +61,7 @@
   --popover-foreground: 25 18% 11%;
   --popover-border: 36 18% 89%;
 
-  --primary: 138 55% 40%;
+  --primary: 138 46% 36%;
   --primary-foreground: 0 0% 100%;
 
   --secondary: 270 95% 75%;
@@ -70,7 +70,7 @@
   --muted: 38 26% 93%;
   --muted-foreground: 28 10% 41%;
 
-  --accent: 82 62% 47%;
+  --accent: 82 52% 43%;
   --accent-foreground: 26 20% 14%;
 
   --destructive: 12 90% 56%;
@@ -78,7 +78,7 @@
 
   --border: 36 18% 89%;
   --input: 36 18% 89%;
-  --ring: 138 55% 40%;
+  --ring: 138 46% 36%;
 
   --sidebar: 0 0% 100%;
   --sidebar-foreground: 25 18% 11%;
@@ -99,7 +99,7 @@
   --popover-foreground: 37 39% 94%;
   --popover-border: 0 0% 16%;
 
-  --primary: 138 54% 43%;
+  --primary: 138 44% 39%;
   --primary-foreground: 0 0% 100%;
 
   --secondary: 270 95% 75%;
@@ -108,7 +108,7 @@
   --muted: 0 0% 8%;
   --muted-foreground: 35 12% 70%;
 
-  --accent: 82 60% 49%;
+  --accent: 82 50% 45%;
   --accent-foreground: 30 40% 8%;
 
   --destructive: 25 95% 53%;
@@ -116,7 +116,7 @@
 
   --border: 0 0% 16%;
   --input: 0 0% 12%;
-  --ring: 138 54% 43%;
+  --ring: 138 44% 39%;
 
   --sidebar: 0 0% 8%;
   --sidebar-foreground: 37 39% 94%;
@@ -136,7 +136,7 @@
     @apply bg-background text-foreground font-sans antialiased;
     min-height: 100vh;
     background-image:
-      radial-gradient(circle at top left, rgba(46, 160, 67, 0.08), transparent 30%),
+      radial-gradient(circle at top left, rgba(44, 143, 70, 0.07), transparent 30%),
       radial-gradient(circle at top right, rgba(192, 132, 252, 0.09), transparent 24%),
       linear-gradient(180deg, rgba(255,255,255,0.72), rgba(255,255,255,0.96));
   }
@@ -145,7 +145,7 @@
   body:is(.dark *) {
     color-scheme: dark;
     background-image:
-      radial-gradient(circle at 15% 0%, rgba(46, 160, 67, 0.1), transparent 24%),
+      radial-gradient(circle at 15% 0%, rgba(44, 143, 70, 0.09), transparent 24%),
       radial-gradient(circle at 86% 8%, rgba(192, 132, 252, 0.12), transparent 20%),
       radial-gradient(circle at 50% 110%, rgba(249, 115, 22, 0.08), transparent 24%),
       linear-gradient(180deg, rgba(20, 20, 20, 0.98), rgba(13, 13, 13, 1));
@@ -165,7 +165,7 @@
   }
 
   ::selection {
-    background: rgba(46, 160, 67, 0.22);
+    background: rgba(44, 143, 70, 0.2);
   }
 }
 
@@ -207,7 +207,7 @@
     inset: -1px;
     border-radius: inherit;
     background:
-      linear-gradient(135deg, rgba(46,160,67,0.18), rgba(138,194,52,0.12), rgba(192,132,252,0.16), rgba(249,115,22,0.12));
+      linear-gradient(135deg, rgba(44,143,70,0.16), rgba(139,191,63,0.1), rgba(192,132,252,0.15), rgba(249,115,22,0.12));
     opacity: 0.8;
     z-index: -2;
   }
@@ -231,8 +231,8 @@
       98deg,
       #f5f0e8 0%,
       #c084fc 22%,
-      #8ac234 50%,
-      #2ea043 76%,
+      #8bbf3f 50%,
+      #2c8f46 76%,
       #f5f0e8 100%
     );
     background-size: 220% auto;
@@ -247,8 +247,8 @@
       90deg,
       #c084fc 0%,
       #f97316 26%,
-      #8ac234 58%,
-      #2ea043 100%
+      #8bbf3f 58%,
+      #2c8f46 100%
     );
     background-size: 200% auto;
     color: transparent;
@@ -274,7 +274,7 @@
   }
 
   .belka-gradient {
-    background: linear-gradient(125deg, #2ea043 0%, #8ac234 35%, #c084fc 72%, #f97316 100%);
+    background: linear-gradient(125deg, #2c8f46 0%, #8bbf3f 35%, #c084fc 72%, #f97316 100%);
     background-size: 220% 220%;
     animation: belka-gradient-shift 6s ease infinite;
     position: relative;
@@ -356,7 +356,7 @@
   }
 
   .composer-shell {
-    border: 1px solid rgba(46, 160, 67, 0.16);
+    border: 1px solid rgba(44, 143, 70, 0.14);
     background:
       linear-gradient(180deg, rgba(255,255,255,0.84), rgba(255,255,255,0.72));
     box-shadow:

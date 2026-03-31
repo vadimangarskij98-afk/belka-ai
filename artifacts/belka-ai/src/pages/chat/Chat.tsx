@@ -244,21 +244,59 @@ const VISIBLE_TOOL_LABELS: Record<string, string> = {
   run_command: "Run command",
 };
 
+const UI_STEP_LABELS: Record<string, string> = {
+  thinking: "Понимание запроса",
+  searching: "Проверка источников",
+  generating: "Подготовка ответа",
+  generating_image: "Создание изображения",
+  coding: "Реализация решения",
+  reviewing: "Проверка результата",
+  writing: "Финальная сборка",
+};
+
+const UI_TOOL_LABELS: Record<string, string> = {
+  create_file: "Создание файла",
+  edit_file: "Редактирование",
+  delete_file: "Удаление файла",
+  run_command: "Запуск команды",
+};
+
+const MODE_SUBTITLE: Record<"chat" | "code" | "multi-agent" | "image", string> = {
+  chat: "Диалоговый режим ассистента",
+  code: "Среда для инженерного выполнения",
+  "multi-agent": "Согласованная работа нескольких агентов",
+  image: "Пространство для генерации изображений",
+};
+
+const COMPOSER_MODE_LABEL: Record<"chat" | "code" | "multi-agent" | "image", string> = {
+  chat: "Диалог с ассистентом",
+  code: "Рабочая поверхность разработки",
+  "multi-agent": "Скоординированный запуск агентов",
+  image: "Поток генерации изображений",
+};
+
+const EMPTY_STATE_BADGE_LABEL: Record<"chat" | "code" | "multi-agent" | "image", string> = {
+  chat: "Диалог готов",
+  code: "Кодовый контур готов",
+  "multi-agent": "Мультиагентный контур готов",
+  image: "Генерация готова",
+};
+
 const CHAT_STARTERS = [
   {
     mode: "code" as const,
-    label: "Fix a broken auth flow",
-    prompt: "Inspect the authentication flow, fix the risky session edge cases, and tell me what still needs hardening.",
+    label: "Починить авторизацию",
+    prompt: "Проверьте поток авторизации, исправьте рискованные места в работе сессий и перечислите, что ещё нужно усилить.",
   },
   {
     mode: "multi-agent" as const,
-    label: "Research a stack decision",
-    prompt: "Compare the best stack for a 2026 AI workspace product and explain the tradeoffs before recommending one.",
+    label: "Сравнить стек",
+    prompt: "Сравните лучшие стеки для AI workspace-продукта 2026 года и объясните компромиссы перед рекомендацией.",
   },
   {
     mode: "chat" as const,
-    label: "Plan the next sprint",
-    prompt: "Break the next product milestone into clean execution steps, highlight blockers, and suggest what to ship first.",
+    label: "Разбить следующий спринт",
+    prompt: "Разбейте следующий этап продукта на понятные шаги, выделите блокеры и предложите, что нужно выпускать первым.",
   },
 ];
 
@@ -269,24 +307,24 @@ const MODE_AGENT_RAIL: Record<"chat" | "code" | "multi-agent" | "image", {
   tone: "primary" | "secondary" | "accent";
 }[]> = {
   chat: [
-    { role: AgentRole.orchestrator, title: "Planner", detail: "Shaping the answer path", tone: "secondary" },
-    { role: AgentRole.researcher, title: "Research", detail: "Checking live context", tone: "accent" },
-    { role: AgentRole.coder, title: "Responder", detail: "Packaging the final reply", tone: "primary" },
+    { role: AgentRole.orchestrator, title: "Планировщик", detail: "Собирает маршрут ответа", tone: "secondary" },
+    { role: AgentRole.researcher, title: "Исследователь", detail: "Проверяет актуальный контекст", tone: "accent" },
+    { role: AgentRole.coder, title: "Ассистент", detail: "Собирает итоговый ответ", tone: "primary" },
   ],
   code: [
-    { role: AgentRole.coder, title: "Coder", detail: "Editing files and validating", tone: "primary" },
-    { role: AgentRole.reviewer, title: "Reviewer", detail: "Catching regressions", tone: "secondary" },
-    { role: AgentRole.designer, title: "Designer", detail: "Keeping UI balanced", tone: "accent" },
+    { role: AgentRole.coder, title: "Кодер", detail: "Меняет файлы и валидирует", tone: "primary" },
+    { role: AgentRole.reviewer, title: "Ревьюер", detail: "Ловит регрессии", tone: "secondary" },
+    { role: AgentRole.designer, title: "Дизайнер", detail: "Держит интерфейс в балансе", tone: "accent" },
   ],
   "multi-agent": [
-    { role: AgentRole.researcher, title: "Research", detail: "Collecting evidence", tone: "accent" },
-    { role: AgentRole.coder, title: "Builder", detail: "Shipping the change set", tone: "primary" },
-    { role: AgentRole.reviewer, title: "QA", detail: "Verifying edge cases", tone: "secondary" },
+    { role: AgentRole.researcher, title: "Исследование", detail: "Собирает аргументы и данные", tone: "accent" },
+    { role: AgentRole.coder, title: "Исполнитель", detail: "Собирает change set", tone: "primary" },
+    { role: AgentRole.reviewer, title: "QA", detail: "Проверяет крайние случаи", tone: "secondary" },
   ],
   image: [
-    { role: AgentRole.designer, title: "Art direction", detail: "Refining visual language", tone: "secondary" },
-    { role: AgentRole.orchestrator, title: "Prompt routing", detail: "Choosing the generation path", tone: "accent" },
-    { role: AgentRole.coder, title: "Delivery", detail: "Preparing assets and output", tone: "primary" },
+    { role: AgentRole.designer, title: "Арт-дирекция", detail: "Выравнивает визуальный язык", tone: "secondary" },
+    { role: AgentRole.orchestrator, title: "Маршрутизация", detail: "Выбирает путь генерации", tone: "accent" },
+    { role: AgentRole.coder, title: "Доставка", detail: "Готовит итоговые ассеты", tone: "primary" },
   ],
 };
 
@@ -321,7 +359,7 @@ function AgentActivityRail({
               </div>
             </div>
             <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] ${toneClass[item.tone]}`}>
-              {active ? "Live" : "Ready"}
+              {active ? "Активно" : "Готово"}
             </span>
           </div>
         </div>
@@ -340,7 +378,7 @@ function ToolCallBlockInline({ tool, args, status, result, error }: { tool: stri
       ) : (
         <FileCode size={13} className="text-red-400 flex-shrink-0" />
       )}
-      <span className={status === "running" ? "font-medium" : ""}>{VISIBLE_TOOL_LABELS[tool] || tool}</span>
+      <span className={status === "running" ? "font-medium" : ""}>{UI_TOOL_LABELS[tool] || tool}</span>
       {args.path && <code className="rounded border border-border/60 bg-card/70 px-1.5 py-0.5 text-[10px] font-mono">{args.path}</code>}
       {result && <span className="text-[10px] text-muted-foreground/50 ml-auto truncate max-w-[150px]">{result}</span>}
       {error && <span className="text-[10px] text-red-400/70 ml-auto truncate max-w-[150px]">{error}</span>}
@@ -526,6 +564,82 @@ function VoiceCommandDock({
   );
 }
 
+function VoiceCommandDockV2({
+  voiceAssistant,
+  voiceConfig,
+}: {
+  voiceAssistant: {
+    isActive: boolean;
+    isDictating: boolean;
+    isProcessing: boolean;
+    lastTranscript: string;
+    toggle: () => void;
+  };
+  voiceConfig: VoiceAssistantConfig;
+}) {
+  const statusTone = !voiceConfig.voiceEnabled
+    ? "border-border/70 bg-card/70 text-muted-foreground"
+    : voiceAssistant.isDictating
+      ? "border-[#F97316]/30 bg-[#F97316]/10 text-[#F97316]"
+      : voiceAssistant.isActive
+        ? "border-primary/30 bg-primary/10 text-primary"
+        : "border-secondary/25 bg-secondary/10 text-secondary";
+
+  const statusLabel = !voiceConfig.voiceEnabled
+    ? "Голос выключен"
+    : voiceAssistant.isDictating
+      ? "Идёт диктовка"
+      : voiceAssistant.isProcessing
+        ? "Обрабатываю команду"
+        : voiceAssistant.isActive
+          ? "Слушаю"
+          : "Голосовой режим в ожидании";
+
+  const caption = !voiceConfig.voiceEnabled
+    ? "Включите общий голосовой профиль в настройках администратора."
+    : voiceAssistant.lastTranscript
+      ? voiceAssistant.lastTranscript
+      : "Управляйте рабочим пространством голосом на русском.";
+
+  return (
+    <div className="mx-auto flex w-full max-w-[360px] items-center gap-2 rounded-[24px] border border-border/70 bg-card/80 px-2.5 py-2 shadow-[0_12px_32px_rgba(0,0,0,0.12)] max-md:max-w-none">
+      <button
+        onClick={voiceAssistant.toggle}
+        className={`relative inline-flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl border transition-all ${
+          voiceAssistant.isDictating
+            ? "border-[#F97316]/35 bg-[#F97316]/12 text-[#F97316]"
+            : voiceAssistant.isActive
+              ? "border-primary/30 bg-primary/12 text-primary"
+              : "border-secondary/25 bg-secondary/10 text-secondary"
+        }`}
+        title={statusLabel}
+      >
+        {voiceAssistant.isActive ? <Mic size={18} /> : <MicOff size={18} />}
+        {voiceConfig.voiceEnabled && (
+          <span
+            className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full ${
+              voiceAssistant.isDictating ? "bg-[#F97316]" : voiceAssistant.isActive ? "bg-[#2c8f46]" : "bg-[#C084FC]"
+            } ${voiceAssistant.isActive ? "animate-pulse" : ""}`}
+          />
+        )}
+      </button>
+
+      <div className="min-w-0 flex-1">
+        <div className="mb-1 flex items-center gap-2">
+          <div className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] ${statusTone}`}>
+            <Waves size={11} />
+            {statusLabel}
+          </div>
+          {voiceConfig.voiceEnabled && (
+            <span className="text-[10px] font-medium text-muted-foreground">{voiceConfig.preset.replace(/_/g, " ")}</span>
+          )}
+        </div>
+        <div className="truncate text-[11px] leading-5 text-muted-foreground">{caption}</div>
+      </div>
+    </div>
+  );
+}
+
 function StreamingIndicator({ state, mode }: { state: StreamingState; mode: "chat" | "code" | "multi-agent" | "image" }) {
   return (
     <div className="flex justify-start gap-3">
@@ -539,7 +653,7 @@ function StreamingIndicator({ state, mode }: { state: StreamingState; mode: "cha
               BELKA CODER
             </span>
             <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-              Working
+              В работе
             </span>
           </div>
           {state.thinkingStartMs > 0 && (
@@ -557,7 +671,7 @@ function StreamingIndicator({ state, mode }: { state: StreamingState; mode: "cha
               {state.steps.map((step, i) => {
                 const Icon = STEP_ICONS[step.step] || Brain;
                 const isActive = !step.done;
-                const label = VISIBLE_STEP_LABELS[step.step] || step.text;
+                const label = UI_STEP_LABELS[step.step] || step.text;
                 const duration = step.endedAt && step.startedAt ? step.endedAt - step.startedAt : undefined;
                 return (
                   <div
@@ -1367,28 +1481,32 @@ export default function ChatPage() {
                 {mode === "multi-agent" ? t("multiAgent") : mode === "image" ? t("image") : mode === "chat" ? t("chat") : t("code")}
               </span>
             </div>
-            <div className="mt-1 text-[11px] text-muted-foreground">
+            <div className="hidden mt-1 text-[11px] text-muted-foreground">
               {mode === "multi-agent" ? "Согласованная работа нескольких агентов" : mode === "image" ? "Рабочее пространство для генерации изображений" : mode === "chat" ? "Диалоговый режим ассистента" : "Среда для инженерного выполнения"}
             </div>
           </div>
 
+          <div className="mt-1 text-[11px] text-muted-foreground max-md:order-2 max-md:col-span-full">
+            {MODE_SUBTITLE[mode]}
+          </div>
+
           <div className="max-md:order-3 max-md:col-span-full">
-            <VoiceCommandDock voiceAssistant={voiceAssistant} voiceConfig={voiceConfig} />
+            <VoiceCommandDockV2 voiceAssistant={voiceAssistant} voiceConfig={voiceConfig} />
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-1.5 max-md:order-2 max-md:justify-start">
             {isAdmin && (
               <>
-            <button onClick={() => setMcpOpen(true)} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" title="MCP Servers">
+            <button onClick={() => setMcpOpen(true)} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors" title="MCP серверы">
               <Plug size={14} />
             </button>
-            <button onClick={() => setTerminalOpen(prev => !prev)} className={`p-1.5 rounded-lg transition-colors ${terminalOpen ? "bg-emerald-500/20 text-emerald-400" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`} title="Terminal">
+            <button onClick={() => setTerminalOpen(prev => !prev)} className={`p-1.5 rounded-lg transition-colors ${terminalOpen ? "bg-emerald-500/20 text-emerald-400" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`} title="Терминал">
               <TerminalSquare size={14} />
             </button>
-            <button onClick={() => setPreviewStatusOpen(prev => !prev)} className={`p-1.5 rounded-lg transition-colors ${previewStatusOpen ? "bg-accent/20 text-accent-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`} title="Preview Server">
+            <button onClick={() => setPreviewStatusOpen(prev => !prev)} className={`p-1.5 rounded-lg transition-colors ${previewStatusOpen ? "bg-accent/20 text-accent-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`} title="Сервер превью">
               <Server size={14} />
             </button>
-            <button onClick={() => setWorkspacePickerOpen(true)} className={`p-1.5 rounded-lg transition-colors ${workspacePath ? "bg-secondary/20 text-secondary" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`} title="Workspace folder">
+            <button onClick={() => setWorkspacePickerOpen(true)} className={`p-1.5 rounded-lg transition-colors ${workspacePath ? "bg-secondary/20 text-secondary" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`} title="Папка проекта">
               <FolderOpen size={14} />
             </button>
             <div className="h-4 w-px bg-border/50 mx-0.5" />
@@ -1432,10 +1550,10 @@ export default function ChatPage() {
                         BELKA workspace
                       </div>
                       <ShinyText as="h2" className="mb-3 text-2xl font-display font-bold sm:text-3xl">
-                        Build with calm focus, not noisy agent clutter
+                        Работайте спокойно, без шумного агентного интерфейса
                       </ShinyText>
                       <p className="max-w-2xl text-sm leading-7 text-muted-foreground sm:text-base">
-                        Use chat for quick guidance, code mode for execution, and multi-agent mode when the task needs research, verification, and delivery in parallel.
+                        Используйте чат для быстрых ответов, code mode для исполнения, а multi-agent mode для задач, где исследование, проверка и доставка идут параллельно.
                       </p>
                       <AgentActivityRail mode={mode} className="mt-5" />
                       <div className="mt-5 flex flex-wrap gap-2">
@@ -1460,19 +1578,19 @@ export default function ChatPage() {
                       <div className="rounded-[29px] border border-border/70 bg-card/80 p-5">
                         <div className="mb-4 flex items-center justify-between">
                           <div>
-                            <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Agent lineup</div>
-                            <div className="mt-1 text-base font-semibold text-foreground">Visible work, readable progress</div>
+                            <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Линейка агентов</div>
+                            <div className="mt-1 text-base font-semibold text-foreground">Видимая работа и читаемый прогресс</div>
                           </div>
                           <span className="rounded-full border border-secondary/20 bg-secondary/10 px-3 py-1 text-[11px] font-medium text-secondary">
-                            {mode === "multi-agent" ? "Multi-agent ready" : "Voice + tool aware"}
+                            {EMPTY_STATE_BADGE_LABEL[mode]}
                           </span>
                         </div>
 
                         <div className="space-y-3">
                           {[
-                            { role: AgentRole.coder, title: "Coder", note: "Implements changes and validates the result." },
-                            { role: AgentRole.reviewer, title: "Reviewer", note: "Checks regressions, edge cases, and output quality." },
-                            { role: AgentRole.designer, title: "Designer", note: "Keeps the interface aligned, balanced, and premium." },
+                            { role: AgentRole.coder, title: "Кодер", note: "Вносит изменения и валидирует результат." },
+                            { role: AgentRole.reviewer, title: "Ревьюер", note: "Проверяет регрессии, крайние случаи и качество выдачи." },
+                            { role: AgentRole.designer, title: "Дизайнер", note: "Держит интерфейс ровным, аккуратным и премиальным." },
                           ].map((item) => (
                             <div key={item.title} className="flex items-center gap-3 rounded-[22px] border border-border/70 bg-background/70 p-3">
                               <AgentAvatar role={item.role} className="h-10 w-10" isPulsing />
@@ -1622,27 +1740,44 @@ export default function ChatPage() {
             <div className="composer-shell rounded-[30px] border border-border/70 p-2 shadow-[0_26px_50px_rgba(0,0,0,0.16)] transition-all duration-300 focus-within:border-primary/35">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-2 pt-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full border border-border/70 bg-card/70 px-3 py-1 text-[11px] font-medium text-foreground/85">
+                  <span className="hidden rounded-full border border-border/70 bg-card/70 px-3 py-1 text-[11px] font-medium text-foreground/85">
                     {mode === "multi-agent" ? "Скоординированный запуск агентов" : mode === "image" ? "Поток генерации изображений" : mode === "chat" ? "Диалог с ассистентом" : "Рабочая поверхность разработки"}
                   </span>
+                  <span className="rounded-full border border-border/70 bg-card/70 px-3 py-1 text-[11px] font-medium text-foreground/85">
+                    {COMPOSER_MODE_LABEL[mode]}
+                  </span>
                   {streaming.isStreaming ? (
-                    <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary">
+                    <span className="hidden rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary">
                       BELKA работает
                     </span>
                   ) : voiceAssistant.isActive ? (
-                    <span className="rounded-full border border-secondary/20 bg-secondary/10 px-3 py-1 text-[11px] font-medium text-secondary">
+                    <span className="hidden rounded-full border border-secondary/20 bg-secondary/10 px-3 py-1 text-[11px] font-medium text-secondary">
                       Голосовой режим активен
                     </span>
                   ) : (
-                    <span className="rounded-full border border-border/70 bg-card/70 px-3 py-1 text-[11px] font-medium text-muted-foreground">
+                    <span className="hidden rounded-full border border-border/70 bg-card/70 px-3 py-1 text-[11px] font-medium text-muted-foreground">
                       Загрузка файлов появится после подключения рабочего upload-маршрута
                     </span>
                   )}
                 </div>
-                <div className="text-[11px] text-muted-foreground">
+                <span className={`rounded-full border px-3 py-1 text-[11px] font-medium ${
+                  streaming.isStreaming
+                    ? "border-primary/20 bg-primary/10 text-primary"
+                    : voiceAssistant.isActive
+                      ? "border-secondary/20 bg-secondary/10 text-secondary"
+                      : "border-border/70 bg-card/70 text-muted-foreground"
+                }`}>
+                  {streaming.isStreaming
+                    ? "BELKA в работе"
+                    : voiceAssistant.isActive
+                      ? "Голосовой режим активен"
+                      : "Загрузка файлов появится после подключения рабочего upload-маршрута"}
+                </span>
+                <div className="hidden text-[11px] text-muted-foreground">
                   Shift+Enter для новой строки
                 </div>
               </div>
+              <div className="text-[11px] text-muted-foreground">Shift+Enter для новой строки</div>
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}

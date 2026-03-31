@@ -84,7 +84,8 @@ function SliderRow({
           <div className="text-xs text-muted-foreground">{hint}</div>
         </div>
         <div className="rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
-          {value}{suffix ?? ""}
+          {value}
+          {suffix ?? ""}
         </div>
       </div>
       <input
@@ -137,7 +138,7 @@ export default function AdminVoiceAssistant() {
         setConfig(settings);
       } catch (error) {
         if (!cancelled) {
-          setTestResult(error instanceof Error ? error.message : "Failed to load voice settings");
+          setTestResult(error instanceof Error ? error.message : "Не удалось загрузить настройки голоса.");
         }
       } finally {
         if (!cancelled) {
@@ -159,13 +160,13 @@ export default function AdminVoiceAssistant() {
       const saved = await saveVoiceAssistantConfig(config);
       setConfig(saved);
       toast({
-        title: "Voice profile saved",
-        description: "The new voice defaults are now active across the product.",
+        title: "Профиль голоса сохранён",
+        description: "Новые голосовые настройки уже применены по всему продукту.",
       });
     } catch (error) {
       toast({
-        title: "Save failed",
-        description: error instanceof Error ? error.message : "Could not save voice settings.",
+        title: "Не удалось сохранить профиль",
+        description: error instanceof Error ? error.message : "Попробуйте снова через несколько секунд.",
         variant: "destructive",
       });
     } finally {
@@ -189,14 +190,14 @@ export default function AdminVoiceAssistant() {
       });
       const data = await response.json();
       if (!response.ok || !data.audioUrl) {
-        throw new Error(data.error || "No audio returned from the provider");
+        throw new Error(data.error || "Провайдер не вернул аудио.");
       }
 
       const audio = new Audio(data.audioUrl);
       await audio.play();
-      setTestResult(`Voice path OK via ${data.providerUsed} / ${data.presetUsed}.`);
+      setTestResult(`Голосовой контур исправен: ${data.providerUsed} / ${data.presetUsed}.`);
     } catch (error) {
-      setTestResult(error instanceof Error ? error.message : "Could not run voice test");
+      setTestResult(error instanceof Error ? error.message : "Не удалось запустить голосовой тест.");
     } finally {
       setTestingVoice(false);
     }
@@ -211,18 +212,18 @@ export default function AdminVoiceAssistant() {
         method: "POST",
         headers: jsonHeaders(),
         body: JSON.stringify({
-          message: "Introduce yourself in one short line and say how you help inside the project.",
+          message: "Представься одной короткой строкой и скажи, чем помогаешь внутри проекта.",
           mode: "chat",
         }),
       });
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || "BELKA did not return a response");
+        throw new Error(data.error || "BELKA не вернула ответ.");
       }
 
-      setTestResult(data.reply || "BELKA replied without visible text.");
+      setTestResult(data.reply || "BELKA ответила без видимого текста.");
     } catch (error) {
-      setTestResult(error instanceof Error ? error.message : "Could not test BELKA response");
+      setTestResult(error instanceof Error ? error.message : "Не удалось проверить ответ BELKA.");
     } finally {
       setTestingAgent(false);
     }
@@ -233,12 +234,12 @@ export default function AdminVoiceAssistant() {
       <div className="mb-8 max-w-3xl">
         <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
           <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-          Global voice profile
+          Общий голосовой профиль
         </div>
-        <h1 className="mb-2 text-3xl font-display font-bold text-foreground">Voice Assistant Control</h1>
+        <h1 className="mb-2 text-3xl font-display font-bold text-foreground">Голосовой ассистент</h1>
         <p className="text-muted-foreground">
-          Manage the shared BELKA voice profile, dictation behavior, echo guard, and the default spoken experience
-          used across chat, agent updates, and project navigation.
+          Управляйте общим голосовым профилем BELKA, поведением диктовки, echo guard и тем, как система говорит в
+          чате, во время шагов агента и при навигации по проекту.
         </p>
       </div>
 
@@ -250,9 +251,9 @@ export default function AdminVoiceAssistant() {
                 <Waves size={20} />
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-foreground">Providers and health</h2>
+                <h2 className="text-lg font-semibold text-foreground">Провайдеры и состояние</h2>
                 <p className="text-xs text-muted-foreground">
-                  Backend status for remote TTS providers. No browser secrets are trusted here.
+                  Статус backend-провайдеров TTS. Браузерные секреты здесь не используются и не считаются доверенными.
                 </p>
               </div>
             </div>
@@ -260,7 +261,7 @@ export default function AdminVoiceAssistant() {
             {loading ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 size={16} className="animate-spin" />
-                Loading provider status...
+                Загружаю состояние провайдеров...
               </div>
             ) : (
               <div className="grid gap-3 sm:grid-cols-2">
@@ -275,18 +276,18 @@ export default function AdminVoiceAssistant() {
                             : "border-orange-500/20 bg-orange-500/10 text-orange-400"
                         }`}
                       >
-                        {provider.configured ? "Configured" : "Missing key"}
+                        {provider.configured ? "Настроен" : "Ключ не найден"}
                       </span>
                     </div>
                     <div className="text-sm text-muted-foreground">
                       {provider.reachable
-                        ? "Provider endpoint is reachable and ready to synthesize."
-                        : "No live health confirmation was returned from this endpoint yet."}
+                        ? "Провайдер доступен и готов синтезировать речь."
+                        : "Живое подтверждение доступности от этого endpoint пока не получено."}
                     </div>
                     {provider.default && (
                       <div className="mt-3 inline-flex items-center gap-1 text-xs text-primary">
                         <CheckCircle2 size={12} />
-                        Default provider
+                        Провайдер по умолчанию
                       </div>
                     )}
                   </div>
@@ -301,9 +302,10 @@ export default function AdminVoiceAssistant() {
                 <Mic size={20} />
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-foreground">Preset profile</h2>
+                <h2 className="text-lg font-semibold text-foreground">Профиль голоса</h2>
                 <p className="text-xs text-muted-foreground">
-                  Pick the voice character BELKA should use for spoken prompts, updates, and command feedback.
+                  Выберите характер речи, который BELKA должна использовать для подсказок, статусов и командной
+                  обратной связи.
                 </p>
               </div>
             </div>
@@ -316,7 +318,7 @@ export default function AdminVoiceAssistant() {
                   onClick={() => setConfig((prev) => ({ ...prev, preset: preset.id }))}
                   className={`rounded-2xl border p-4 text-left transition-all ${
                     config.preset === preset.id
-                      ? "border-primary/30 bg-primary/10 shadow-[0_0_0_1px_rgba(46,160,67,0.16)]"
+                      ? "border-primary/30 bg-primary/10 shadow-[0_0_0_1px_rgba(44,143,70,0.16)]"
                       : "border-border/70 bg-background/70 hover:border-primary/20 hover:bg-background"
                   }`}
                 >
@@ -334,9 +336,10 @@ export default function AdminVoiceAssistant() {
               <ShieldCheck size={20} />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-foreground">Behavior and safeguards</h2>
+              <h2 className="text-lg font-semibold text-foreground">Поведение и защита</h2>
               <p className="text-xs text-muted-foreground">
-                These settings control speaking, dictation, unknown command routing, and echo protection.
+                Эти настройки управляют озвучкой, диктовкой, маршрутизацией неизвестных команд и защитой от
+                самопрослушивания.
               </p>
             </div>
           </div>
@@ -345,33 +348,33 @@ export default function AdminVoiceAssistant() {
             {[
               {
                 key: "voiceEnabled" as const,
-                title: "Voice pipeline enabled",
-                hint: "Turns on the shared spoken assistant flow.",
+                title: "Голосовой контур включён",
+                hint: "Активирует общий spoken assistant flow.",
               },
               {
                 key: "dictationEnabled" as const,
-                title: "Dictation mode",
-                hint: "Allows speech-to-text dictation into the chat composer.",
+                title: "Режим диктовки",
+                hint: "Разрешает speech-to-text диктовку прямо в composer чата.",
               },
               {
                 key: "autoSpeakSteps" as const,
-                title: "Speak agent steps",
-                hint: "Reads short status updates while BELKA is thinking, searching, or reviewing.",
+                title: "Озвучивать шаги агента",
+                hint: "Читает короткие статусы, пока BELKA думает, ищет или проверяет решение.",
               },
               {
                 key: "autoSpeakReplies" as const,
-                title: "Speak final replies",
-                hint: "Reads final answers out loud when the interaction is concise enough.",
+                title: "Озвучивать финальные ответы",
+                hint: "Читает итоговые ответы вслух, если они остаются достаточно короткими.",
               },
               {
                 key: "routeUnknownCommandsToAgent" as const,
-                title: "Route unknown commands to BELKA",
-                hint: "If no local voice phrase matches, send the spoken request into the main agent flow.",
+                title: "Отправлять неизвестные команды в BELKA",
+                hint: "Если локальная голосовая фраза не совпала, запрос уходит в основной агентный поток.",
               },
               {
                 key: "echoGuardEnabled" as const,
                 title: "Echo guard",
-                hint: "Pauses recognition during playback so BELKA does not answer itself.",
+                hint: "Ставит распознавание на паузу во время воспроизведения, чтобы BELKA не отвечала самой себе.",
               },
             ].map((item) => (
               <div key={item.key} className="rounded-2xl border border-border/70 bg-background/70 p-4">
@@ -391,18 +394,18 @@ export default function AdminVoiceAssistant() {
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <SliderRow
-              label="Echo guard resume delay"
-              hint="How long BELKA waits after playback before reopening the microphone."
+              label="Задержка повторного включения микрофона"
+              hint="Сколько BELKA ждёт после воспроизведения, прежде чем снова открыть микрофон."
               value={config.echoGuardDelayMs}
               min={300}
               max={2000}
               step={50}
-              suffix=" ms"
+              suffix=" мс"
               onChange={(nextValue) => setConfig((prev) => ({ ...prev, echoGuardDelayMs: nextValue }))}
             />
             <SliderRow
-              label="Max reply chars for auto speech"
-              hint="Longer replies stay visual-only; shorter ones can be read out loud."
+              label="Максимальная длина ответа для автоозвучки"
+              hint="Длинные ответы остаются только визуальными, короткие можно читать вслух автоматически."
               value={config.replyMaxChars}
               min={120}
               max={800}
@@ -418,9 +421,9 @@ export default function AdminVoiceAssistant() {
               <BrainCircuit size={20} />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-foreground">Live checks</h2>
+              <h2 className="text-lg font-semibold text-foreground">Живые проверки</h2>
               <p className="text-xs text-muted-foreground">
-                Validate the voice engine separately from the BELKA chat flow before you roll changes out.
+                Проверьте voice engine отдельно от chat-flow BELKA, прежде чем выкатывать изменения дальше.
               </p>
             </div>
           </div>
@@ -432,7 +435,7 @@ export default function AdminVoiceAssistant() {
               className="inline-flex items-center gap-2 rounded-2xl border border-primary/20 bg-primary/10 px-4 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-primary/16 disabled:opacity-70"
             >
               {testingVoice ? <Loader2 size={16} className="animate-spin" /> : <Volume2 size={16} />}
-              Test voice output
+              Проверить голосовой вывод
             </button>
 
             <button
@@ -441,12 +444,12 @@ export default function AdminVoiceAssistant() {
               className="inline-flex items-center gap-2 rounded-2xl border border-secondary/20 bg-secondary/10 px-4 py-2.5 text-sm font-medium text-secondary transition-colors hover:bg-secondary/16 disabled:opacity-70"
             >
               {testingAgent ? <Loader2 size={16} className="animate-spin" /> : <BrainCircuit size={16} />}
-              Test BELKA reply
+              Проверить ответ BELKA
             </button>
           </div>
 
           {testResult && (
-            <div className="mt-4 rounded-2xl border border-border/70 bg-background/70 p-4 text-sm text-foreground whitespace-pre-wrap">
+            <div className="mt-4 whitespace-pre-wrap rounded-2xl border border-border/70 bg-background/70 p-4 text-sm text-foreground">
               {testResult}
             </div>
           )}
@@ -456,10 +459,10 @@ export default function AdminVoiceAssistant() {
           <button
             onClick={handleSave}
             disabled={saving}
-            className="inline-flex items-center gap-2 rounded-2xl bg-primary px-6 py-3 font-semibold text-primary-foreground shadow-[0_14px_40px_rgba(46,160,67,0.22)] transition-all hover:translate-y-[-1px] hover:shadow-[0_18px_46px_rgba(46,160,67,0.28)] disabled:opacity-70"
+            className="inline-flex items-center gap-2 rounded-2xl bg-primary px-6 py-3 font-semibold text-primary-foreground shadow-[0_14px_40px_rgba(44,143,70,0.22)] transition-all hover:translate-y-[-1px] hover:shadow-[0_18px_46px_rgba(44,143,70,0.28)] disabled:opacity-70"
           >
             {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-            Save global voice settings
+            Сохранить глобальные голосовые настройки
           </button>
         </div>
       </div>

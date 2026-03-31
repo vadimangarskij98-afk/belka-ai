@@ -247,14 +247,10 @@ export default function Home() {
             </div>
 
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {partnerLogos.map((partner, index) => (
+              {partnerLogos.map((partner) => (
                 <motion.div
                   key={partner.name}
                   className="partner-logo flex min-h-[88px] items-center justify-center gap-3 rounded-2xl border border-border/70 bg-card/70 px-6 py-4"
-                  initial={{ opacity: 0, y: 14 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, amount: 0.6 }}
-                  transition={{ delay: index * 0.08, duration: 0.45 }}
                   whileHover={{ y: -4, scale: 1.01 }}
                 >
                   <img
@@ -278,15 +274,11 @@ export default function Home() {
             />
 
             <div className="mt-6 grid gap-4 md:grid-cols-2">
-              {capabilityCards.map((item, index) => {
+              {capabilityCards.map((item) => {
                 const Icon = item.icon;
                 return (
                   <motion.div
                     key={item.title}
-                    initial={{ opacity: 0, y: 20 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ delay: index * 0.1, duration: 0.5 }}
                     whileHover={{ scale: 1.03, y: -5, rotateX: 3, rotateY: 3 }}
                     style={{ perspective: 1000 }}
                     className="rounded-[24px] border border-border/70 bg-card/70 p-5 transition-colors hover:border-primary/40 will-change-transform"
@@ -313,10 +305,6 @@ export default function Home() {
               {techStack.map((item, index) => (
                 <motion.div
                   key={item}
-                  initial={{ opacity: 0, y: 18 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, amount: 0.5 }}
-                  transition={{ delay: index * 0.06, duration: 0.45 }}
                   whileHover={{ scale: 1.04, zIndex: 10, transition: { duration: 0.2 } }}
                   className="brand-shell rounded-[26px] p-[1px] transform-gpu will-change-transform"
                   style={{ transformStyle: "preserve-3d" }}
@@ -368,15 +356,11 @@ export default function Home() {
                   icon: Bot,
                   text: "Research, verification, review, and coding split into visible roles so heavy requests do not collapse into one blob.",
                 },
-              ].map((card, index) => {
+              ].map((card) => {
                 const Icon = card.icon;
                 return (
                   <motion.div
                     key={card.title}
-                    initial={{ opacity: 0, y: 18 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ delay: index * 0.08, duration: 0.45 }}
                     whileHover={{ scale: 1.03, y: -6, rotateX: 2, rotateY: -2 }}
                     style={{ perspective: 1000 }}
                     className="brand-shell rounded-[28px] p-[1px] will-change-transform"
@@ -409,13 +393,9 @@ export default function Home() {
             />
 
             <div className="mt-6 grid gap-5 lg:grid-cols-3">
-              {pricingTiers.map((tier, index) => (
+              {pricingTiers.map((tier) => (
                 <motion.div
                   key={tier.key}
-                  initial={{ opacity: 0, y: 30 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: index * 0.1, duration: 0.5 }}
                   whileHover={{ scale: 1.02, y: -8, rotateX: 2, rotateY: -2 }}
                   style={{ perspective: 1000 }}
                   className={`relative rounded-[28px] border p-6 will-change-transform ${
@@ -471,9 +451,9 @@ export default function Home() {
           </div>
         </section>
 
-        <footer className="relative z-10 border-t border-border/50 px-4 py-6 text-center text-xs text-muted-foreground sm:px-8">
+        <footer className="relative z-10 border-t border-border/50 px-4 py-6 text-center text-xs text-muted-foreground sm:px-8"><span className="hidden">
           BELKA AI © {new Date().getFullYear()} · Crafted for serious product work
-        </footer>
+        </span><span>BELKA AI © {new Date().getFullYear()} · Crafted for serious product work</span></footer>
 
         <PricingModal open={pricingOpen} onClose={() => setPricingOpen(false)} />
       </div>
